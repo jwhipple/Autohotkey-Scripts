@@ -177,6 +177,7 @@ GetUserHomeDir()
 
 TurnOnNumlock()
 {
+
 	SetNumLockState, On
 }
 
@@ -188,8 +189,10 @@ HasWorkstation()
 
 	if A_OSVersion in WIN_95,WIN_98,WIN_ME,WIN_XP,WIN_VISTA,WIN_7  ; Note: No spaces around commas.
 	{
+
 		return true
 	}
+
 	return false
 }
 
@@ -472,9 +475,9 @@ RemoveDocPrinters()
 	global AdminUser, AdminPW, AdminDomain
 
 	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-	RunWait, %A_WinDir%\system32\cscript.exe //T:10 c:\windows\system32\prnmngr.vbs -d -p "Microsoft Office Live Meeting Document Writer",,Hide
-	RunWait, %A_WinDir%\system32\cscript.exe //T:10 c:\windows\system32\prnmngr.vbs -d -p "Microsoft Office Document Image Writer",,Hide
-	RunWait, %A_WinDir%\system32\cscript.exe //T:10 c:\windows\system32\prnmngr.vbs -d -p "Microsoft XPS Document Writer",,Hide
+	Run, %A_WinDir%\system32\cscript.exe //T:10 c:\windows\system32\prnmngr.vbs -d -p "Microsoft Office Live Meeting Document Writer",,Hide
+	Run, %A_WinDir%\system32\cscript.exe //T:10 c:\windows\system32\prnmngr.vbs -d -p "Microsoft Office Document Image Writer",,Hide
+	Run, %A_WinDir%\system32\cscript.exe //T:10 c:\windows\system32\prnmngr.vbs -d -p "Microsoft XPS Document Writer",,Hide
 	RunAs,
 }
 
@@ -492,7 +495,7 @@ SetTime(_NetworkTimeServer)
 	global AdminUser, AdminPW, AdminDomain
 
 	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-	RunWait, %A_WinDir%\system32\net.exe time \\%_NetworkTimeServer% /SET /Y,,Hide
+	Run, %A_WinDir%\system32\net.exe time \\%_NetworkTimeServer% /SET /Y,,Hide
 	RunAs,
 }
 
@@ -650,8 +653,13 @@ IsInstalled(_Software)
 
 
 
-
-
+ProgressMeter(_Percent=0, _Message="Message Not Set", _2Message="We recommend waiting until this is complete before using your PC.", _TitleBar="KEMBA Login Script")
+{
+	global ProgressBarDisplay
+	If ProgressBarDisplay
+		Progress, %_Percent%, %_Message%, %_2Message%, %_TitleBar%
+	return
+}
 
 
 ; ####################### MS OFFICE FUNCTIONS ####################### 
@@ -670,7 +678,7 @@ SetOfficeTemplatesLocation(_OfficeTemplates)
 	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Microsoft\Office\%OFFICEVER%\Common\General, SharedTemplates, %_OfficeTemplates%
 }
 
-HasOffice(_OfficeVersion)
+HasOffice(_OfficeVersion=-1)
 {
 	; We create a Word object, then check for the version... Thanks to the site: http://blogs.technet.com/b/heyscriptingguy/archive/2005/01/10/how-can-i-determine-which-version-of-word-is-installed-on-a-computer.aspx
 
@@ -682,11 +690,10 @@ HasOffice(_OfficeVersion)
 	} catch e {
 		_OVersion = 0
 	}
-	if _OVersion = %_OfficeVersion%
-	{
-
+	If _OfficeVersion == -1 and _OVersion > 0
 		return true
-	}
+	if _OVersion = %_OfficeVersion%
+		return true
 
 	return false
 }
@@ -749,8 +756,6 @@ CleanOutlookTemp()
 GetOutlookVersion()
 {
 
-
-	
 	If A_UserName = administrator
 	{
 		; We generally do not want to set up outlook for administrator users. Comment out the next two lines if you do.
@@ -760,22 +765,24 @@ GetOutlookVersion()
 	
 	try
 	{
-		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
-		objCommand := ComObjCreate("Outlook.Application")
-		_OVersion := objCommand.Version
-		objRelease(objCommand)
-		StringSplit, MyArray, _OVersion, .
-		_OVersion = %MyArray1%.%MyArray2%
-
-
-		If OutlookProfileCount() > 1
-		{
-			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 1
-		}
+		RegRead,OutlookPath,HKEY_LOCAL_MACHINE, SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\OUTLOOK.EXE, Path
+		SplitPath, OutlookPath, name, dir, ext, name_no_ext, drive
+		FoundPos := RegExMatch(dir, "Office([0-9]+)", SubPat)
+		FoundPos := RegExMatch(SubPat, "([0-9]+)", SubPat)
+		clipboard = %FoundPos%
 		
-		return _OVersion
+		If Not SubPat
+		{
+			return 0
+		}
+		else
+		{
+			SubPat = %SubPat%.0
+			return SubPat
+		}
+
 	} catch e {
-		_OVersion = 0
+		SubPat = 0
 	}
 	return 0
 }
@@ -855,11 +862,11 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 	; Requires: GetOutlookVersion() OutlookProfileExist() RunBackgroundOutlook() OutlookProfileCount() ParseSignatureFiles() SetOutlookSignatureNames()
 	global OFFICEVER
 	
+	
 	; Check to make sure settings file exists.
 	IfNotExist,%_SettingsINI%
 	{
 		MsgBox,Can't Find %_SettingsINI%!`nPlease let MIS know.`n
-
 		return
 	}
 
@@ -883,23 +890,19 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 
 	If wipe
 	{
-
 		RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%MailProfile%
 	}
 	
 	If OutlookProfileExist(MailProfile)
 	{
-		
 		IfExist, %UsersPRF%
 		{
 			; We have Outlook configured and also a PRF file... life is good.
-
 			
 		} else {
 		
 			; NO PRF, but we got an Outlook configured.
 			; Create a PRF file for user.
-
 
 			FileRead,CustomPRFFile,%prfTemplate%
 
@@ -962,11 +965,9 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 		OFFICEVER := GetOutlookVersion()
 		If Not OFFICEVER
 		{
-
 			return
 		}
 	
-
 		Run, taskkill /T /F /IM OUTLOOK.EXE,,Hide
 	
 		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
@@ -974,9 +975,6 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 		IfExist, %UsersPRF%
 		{
 			; We have a PRF file but no Outlook Profile. Tell Outlook to use the PRF file.
-
-
-
 			loop, 4
 			{
 				;RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, DefaultProfile
@@ -989,9 +987,8 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 
 				If CurrentDefaultProfile
 				{
-
+					;MsgBox, CurrentDefaultProfile
 				} else {
-
 					RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, DefaultProfile,%MailProfile%
 				}
 
@@ -1066,8 +1063,20 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 		{
 			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 1
 		}
-
-
+		
+		; Set up name and initials so it wont prompt.
+		FullName := UserObjectADQuery("name")
+		Initials =
+		StringSplit, Names, FullName, %A_Space%
+		Loop, %Names0%
+		{
+			this_color := Names%a_index%
+			Initial := SubStr(this_color, 1, 1)
+			Initials = %Initials%%Initial%
+		}
+		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, Company, KEMBA Financial Credit Union
+		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, UserInitials, %Initials%
+		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, UserName, %FullName%		
 	}
 	
 	;Setup Signatures Here
@@ -1170,20 +1179,19 @@ OutlookProfileCount()
 
 RunBackgroundOutlook()
 {
+
 	try
 	{
 		;Tell Outlook to configure itself using COM objects.
 		;SplashImage, \\cu.int\logonscripts\Pictures\logo.jpg, CWFFFFFF  h600 w800 b1 fs18,`n`n`nNow configuring your e-mail client.`n`nPLEASE WAIT`n`nDo not use your keyboard or mouse yet.
 
+		;The FlipOutlookLoginBit function is for people that set the "Always prompt for login credentials" setting. It bypasses this so we can run Outlook in the background without prompts.
+		
 		objCommand := ComObjCreate("Outlook.Application")
 		objNameSpace := objCommand.GetNameSpace("MAPI")
 		objFolder := objNameSpace.GetDefaultFolder(6)
 		objFolder.unreaditemcount
 		objRelease(objCommand)
-		;SplashImage, Off
-		;SplashImage, \\cu.int\logonscripts\Pictures\logo.jpg, CWFFFFFF  h600 w800 b1 fs18,`n`n`nNow configuring your e-mail signatures.`n`nPLEASE WAIT`n`nDo not use your keyboard or mouse yet.
-;		SetOutlookSignatureNames(MailProfile, fullSig, replySig)
-		;SplashImage, Off
 		return 1
 	}
 	catch e
@@ -1214,6 +1222,65 @@ OutlookProfileExist(_ProfileName) ; Check to see if the user has the specified p
 	return false
 }
 
+RestoreOutlookLoginBit(_RegistryKeys)
+{
+	return
+	Loop, parse, _RegistryKeys,`n
+	{
+		RegRead, value, HKEY_CURRENT_USER, %A_LoopField%, 00036601		
+		If value
+		{
+			StringMid, x, value, 2, 1
+			StringLeft, y, value, 1
+			StringRight, z, value, 6
+			
+			if x = 4
+			{
+				x = %y%C%z%
+				RegWrite, REG_BINARY, HKEY_CURRENT_USER, %A_LoopField%, 00036601, %x%
+			}
+			if x = 0 
+			{
+				x = %y%8%z%	
+				RegWrite, REG_BINARY, HKEY_CURRENT_USER, %A_LoopField%, 00036601, %x%
+			}
+		}
+	}
+
+}
+
+FlipOutlookLoginBit()
+{
+	;The FlipOutlookLoginBit function is for people that set the "Always prompt for login credentials" setting. It bypasses this so we can run Outlook in the background without prompts.
+	regvals =
+	Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 1, 1
+	{
+		IfEqual, A_LoopRegName,00036601
+		{
+			RegRead, value
+			StringMid, x, value, 2, 1
+			StringLeft, y, value, 1
+			StringRight, z, value, 6
+			if x = C
+			{
+				x = 4
+				x = %y%%x%%z%
+				regvals = %regvals%%A_LoopRegSubKey%`n
+				RegWrite, REG_BINARY, HKEY_CURRENT_USER, %A_LoopRegSubKey%, 00036601, %x%
+				sleep, 1000
+			}
+			if x = 8 
+			{
+				x = 0
+				x = %y%%x%%z%
+				regvals = %regvals%%A_LoopRegSubKey%`n
+				RegWrite, REG_BINARY, HKEY_CURRENT_USER, %A_LoopRegSubKey%, 00036601, %x%
+				sleep, 1000
+			}
+		}
+	}
+	return %regvals%
+}
 
 ; ####################### OUTLOOK SIGNATURE FUNCTIONS ####################### 
 ; ####################### OUTLOOK SIGNATURE FUNCTIONS ####################### 
