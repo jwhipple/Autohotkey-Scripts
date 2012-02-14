@@ -648,6 +648,9 @@ IsInstalled(_Software)
 			return true
 		}
 	}
+	
+	
+
 	return false
 }
 
@@ -878,6 +881,20 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 	IniRead, DefaultProfile, %_SettingsINI%, %_MailSectionName%, DefaultProfile
 	IniRead, OverwriteProfile, %_SettingsINI%, %_MailSectionName%, OverwriteProfile
 	IniRead, MailboxName, %_SettingsINI%, %_MailSectionName%, MailboxName
+	SplitPath, UsersPRF,, UserPRFdir
+	StringReplace, UserPRFdir, UserPRFdir, `%USERNAME`%, %A_UserName%, ALL
+	
+	IfNotExist, %UserPRFdir%
+	{
+		FileCreateDir, %UserPRFdir%
+	}
+	IfNotExist, %UserPRFdir%
+	{
+		progress, Off
+		SplashImage, Off
+		MsgBox, Cant create PRF directory!
+		return
+	}
 	
 	UsersPRF := UsersPRF . MailProfile . ".prf"
 		
@@ -889,7 +906,14 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 
 	If wipe
 	{
-		RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%MailProfile%
+		Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
+		{
+			RegDelete
+		}
+		Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Deleted Profiles, 2, 0
+		{
+			RegDelete
+		}
 	}
 	
 	If OutlookProfileExist(MailProfile)
