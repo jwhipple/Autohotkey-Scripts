@@ -767,10 +767,10 @@ GetOutlookVersion()
 	{
 		RegRead,OutlookPath,HKEY_LOCAL_MACHINE, SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\OUTLOOK.EXE, Path
 		SplitPath, OutlookPath, name, dir, ext, name_no_ext, drive
-		FoundPos := RegExMatch(dir, "Office([0-9]+)", SubPat)
+		StringUpper, dir, dir
+		FoundPos := RegExMatch(dir, "OFFICE([0-9]+)", SubPat)
 		FoundPos := RegExMatch(SubPat, "([0-9]+)", SubPat)
-		clipboard = %FoundPos%
-		
+
 		If Not SubPat
 		{
 			return 0
@@ -861,7 +861,6 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 	; Usage:  SetupOutlook(<ini settings file>, <ignore existing profile? 0|1>, <Section in ini file to look for outlook settings>)
 	; Requires: GetOutlookVersion() OutlookProfileExist() RunBackgroundOutlook() OutlookProfileCount() ParseSignatureFiles() SetOutlookSignatureNames()
 	global OFFICEVER
-	
 	
 	; Check to make sure settings file exists.
 	IfNotExist,%_SettingsINI%
@@ -1065,6 +1064,7 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 		}
 		
 		; Set up name and initials so it wont prompt.
+		Company = UserObjectADQuery("company")
 		FullName := UserObjectADQuery("name")
 		Initials =
 		StringSplit, Names, FullName, %A_Space%
@@ -1074,9 +1074,20 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 			Initial := SubStr(this_color, 1, 1)
 			Initials = %Initials%%Initial%
 		}
-		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, Company, KEMBA Financial Credit Union
-		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, UserInitials, %Initials%
-		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, UserName, %FullName%		
+		
+		If OFFICEVER >= 14.0
+		{
+			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, Company, %Company%
+			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, UserInitials, %Initials%
+			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\Common\UserInfo, UserName, %FullName%		
+		} else {
+			Company  := Hex(Company,2)
+			Initials := Hex(Initials,2)
+			FullName := Hex(FullName,2)
+			RegWrite, REG_BINARY, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Common\UserInfo, Company, %Company%
+			RegWrite, REG_BINARY, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Common\UserInfo, UserInitials, %Initials%
+			RegWrite, REG_BINARY, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Common\UserInfo, UserName, %FullName%	
+		}
 	}
 	
 	;Setup Signatures Here
