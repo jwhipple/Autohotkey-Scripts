@@ -8,7 +8,6 @@
 ;
 ; %OVer1% = Outlook Version Number (eg: 11.0)
 
-
 ;#####################################
 ;## Global Variables                ##
 ;#####################################
@@ -624,7 +623,6 @@ IsInstalled(_Software)
 			}
 			
 		} else {
-		
 			DetectHiddenWindows, on
 			DetectHiddenText, on
 			Try
@@ -638,7 +636,6 @@ IsInstalled(_Software)
 						InstalledApps = %InstalledApps%%A_LoopField%`n
 				}
 				WinClose, Search64BitReg.exe
-				;MsgBox, %InstalledApps%
 			}
 			catch
 			{
@@ -651,13 +648,9 @@ IsInstalled(_Software)
 	{
 		If _Software = %A_LoopField%
 		{
-
 			return true
 		}
 	}
-	
-	
-
 	return false
 }
 

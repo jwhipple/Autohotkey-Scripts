@@ -94,7 +94,7 @@ If HasWorkstation()
 	;ALL OS Versions
 	
 	ProgressMeter(10,"Checking for Antivirus.")
-	;CheckAV() ;Check and install antivirus.
+	CheckAV() ;Check and install antivirus.
 	
 	ProgressMeter(20,"Mapping network drives.")
 	MapDrives() ;Map standard drives.
@@ -200,6 +200,7 @@ If (LogonVersion != UserLogonVersion) or (LogonVersion = 0)
 			FixTIFFAssoc()
 		}
 		
+		RemoveTimeclockLnk() ; Delete timeclock icon on desktop.
 		
 		ProgressMeter(80,"Setting up COWWW viewer.")
 		Alternatiff() ;Register and setup Alternatiff
@@ -245,22 +246,38 @@ ExitApp
 ; #################################################################################################################################################################
 
 
-
+RemoveTimeclockLnk()
+{
+	;MsgBox, Removing Timeclock
+	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+	RunWait, \\cu.int\logonscripts\Installers\Timeclock\DeleteTimeclockLnk.exe,,
+	RunAs,		
+}
 
 CSI_ScreenRecordingInstall()
 {
-	global AdminUser, AdminPW, AdminDomain
-
+	global AdminUser, AdminPW, AdminDomain, OS_Version
 
 	If Not IsInstalled("Virtual Observer Agent Client")
 	{
+		; turn progress bar off cause we have to ask a question.
+		Progress, Off
 		MsgBox, 292,CSI Virtual Observer Client, Do you wish to install the call recorder `nsoftware on this PC? `n(Select NO if this is not your normal PC),10
 		IfMsgBox Yes
 		{
-
-			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\Agent_Client.msi /qn,,
-			RunAs,
+			If ( OS_Version == "Windows XP" )
+			{
+				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+				RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\XP\Agent_Client.msi /qn,,
+				RunAs,
+			}
+			If ( OS_Version == "Windows 7" )
+			{
+				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+				RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\Win7\Agent_Client.msi /qn,,
+				RunAs,
+			}
+			
 		}
 		else IfMsgBox Timeout
 		{	
@@ -441,11 +458,12 @@ CheckAV()
 	global AdminUser, AdminPW, AdminDomain
 
 	; Install ESET NOD32 if not found.
-	If Not IsInstalled("ESET NOD32 Antivirus")
+	If IsInstalled("eset nod32 antivirus")
 	{
+		return
+	} else {
 
 		SplashImage, \\cu.int\logonscripts\Pictures\logo.jpg, CWFFFFFF  h400 w500 b1 fs18, `n`nNow installing your anti-virus.`nAfter the install your PC will reboot automatically.
-		ExitApp
 		
 		If OSBitVersion() = "x86"
 		{
@@ -466,8 +484,6 @@ CheckAV()
 		SplashImage, Off
 		Sleep, 10000
 		Shutdown, 6
-
-	} else {
 
 	}
 
@@ -690,7 +706,7 @@ LoginTrack()
 	; A simple way to track who logged into what computer when.
 	FileAppend,
 	(
-		%A_Now% - %A_ComputerName%
+		%A_Now% - %A_ComputerName%`n
 	), \\cu.int\kembaapps\Inventory\Logins\%A_UserName%.txt
 }
 
@@ -701,7 +717,6 @@ MakeShortcuts()
 
 	IfNotInString, NoDesktopIcons, %A_UserName%
 	{
-
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
 		Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\Shortcuts\*.url" "c:\Documents and Settings\All Users\desktop\",,Hide
 		RunAs,
