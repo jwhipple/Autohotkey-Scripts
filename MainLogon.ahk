@@ -93,6 +93,8 @@ If HasWorkstation()
 ; ###################### RAN EVERY TIME ON WORKSTATIONS ###############################
 	;ALL OS Versions
 	
+	Run, \\cu.int\logonscripts\Installers\DelProf\DeleteOldProfiles.exe,,
+	
 	ProgressMeter(10,"Checking for Antivirus.")
 	CheckAV() ;Check and install antivirus.
 	
