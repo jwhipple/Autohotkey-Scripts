@@ -5,23 +5,20 @@
 SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
 SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 
-IfExist, C:\Users\Public
+IfExist, C:\Users\Public\Desktop
 {
 	; Delete the All Users icon
-	Loop, C:\Users\TimeClock.url,,1
-	{
-		FileDelete, %A_LoopFileFullPath%
-	}
-	
+	FileDelete, C:\Users\Public\Desktop\TimeClock.url
+	FileDelete, C:\Users\Public\Desktop\Time Clock.url
+	FileDelete, C:\Users\Public\Desktop\TimeClock.lnk
+	FileDelete, C:\Users\Public\Desktop\Time Clock.url
 }
 
-IfExist, C:\Documents and Settings
+IfExist, C:\Documents and Settings\All Users
 {
 	; Delete the All Users icon
-	Loop, C:\Documents and Settings\TimeClock.url,,1
-	{
-		FileDelete, %A_LoopFileFullPath%
-	}
-	
-
+		FileDelete, C:\Documents and Settings\All Users\Desktop\TimeClock.url
+		FileDelete, C:\Documents and Settings\All Users\Desktop\Time Clock.url
+		FileDelete, C:\Documents and Settings\All Users\Desktop\TimeClock.lnk
+		FileDelete, C:\Documents and Settings\All Users\Desktop\Time Clock.url
 }
