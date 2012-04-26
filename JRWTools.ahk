@@ -403,6 +403,66 @@ UserIsMemberOf(_User)
 	return _UsersGroups 
 }
 
+GetAllUsers()
+{
+	;Returns a carriage return seperated list of all users in active directory. 
+
+	objRootDSE := ComObjGet("LDAP://rootDSE")
+	strDomain := objRootDSE.Get("defaultNamingContext")
+	strADPath := "LDAP://" . strDomain
+	objDomain := ComObjGet(strADPath)
+	objConnection := ComObjCreate("ADODB.Connection")
+	objConnection.Open("Provider=ADsDSOObject")
+	objCommand := ComObjCreate("ADODB.Command")
+	objCommand.ActiveConnection := objConnection
+	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=user));Name;subtree"
+	objRecordSet := objCommand.Execute
+	objRecordCount := objRecordSet.RecordCount
+	objOutputVar :=
+	While !objRecordSet.EOF
+	{
+		strObjectDN := objRecordSet.Fields.Item("Name").value
+		_UserName = %_UserName%`n%strObjectDN%
+		objRecordSet.MoveNext
+	}
+	objRelease(objRootDSE)
+	objRelease(objDomain)
+	objRelease(objConnection)
+	objRelease(objCommand)
+
+	return _UserName 
+}
+
+GetAllGroups()
+{
+	;Returns a carriage return seperated list of all groups in active directory. 
+
+	objRootDSE := ComObjGet("LDAP://rootDSE")
+	strDomain := objRootDSE.Get("defaultNamingContext")
+	strADPath := "LDAP://" . strDomain
+	objDomain := ComObjGet(strADPath)
+	objConnection := ComObjCreate("ADODB.Connection")
+	objConnection.Open("Provider=ADsDSOObject")
+	objCommand := ComObjCreate("ADODB.Command")
+	objCommand.ActiveConnection := objConnection
+	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=group));Name;subtree"
+	objRecordSet := objCommand.Execute
+	objRecordCount := objRecordSet.RecordCount
+	objOutputVar :=
+	While !objRecordSet.EOF
+	{
+		strObjectDN := objRecordSet.Fields.Item("Name").value
+		_GroupName = %_GroupName%`n%strObjectDN%
+		objRecordSet.MoveNext
+	}
+	objRelease(objRootDSE)
+	objRelease(objDomain)
+	objRelease(objConnection)
+	objRelease(objCommand)
+
+	return _GroupName 
+}
+
 
 IsUserInADGroup(_GroupName)
 {

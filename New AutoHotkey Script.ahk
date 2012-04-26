@@ -19,3 +19,6 @@ RanManually =
 ;################################
 _SettingsINI = \\CU.INT\logonscripts\MainLogon.ini
 
+A := GetAllGroups()
+
+MsgBox, %A%
