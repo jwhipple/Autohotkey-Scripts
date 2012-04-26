@@ -311,9 +311,12 @@ DisableNetBios()
 		}
 		if a_LoopRegName = NetbiosOptions
 		{
-			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RegWrite, REG_DWORD, HKEY_LOCAL_MACHINE, %A_LoopRegSubKey%, NetBiosOptions, 2
-			RunAs,
+			IfExist, \\cu.int\logonscripts\Registry\NetBiosSetting.exe
+			{
+				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+				Run, \\cu.int\logonscripts\Registry\NetBiosSetting.exe  %A_LoopRegSubKey%
+				RunAs,
+			}
 		}
 	}
 }
@@ -398,6 +401,66 @@ UserIsMemberOf(_User)
 		_UsersGroups = %_UsersGroups%`nDomain Users
 	}
 	return _UsersGroups 
+}
+
+GetAllUsers()
+{
+	;Returns a carriage return seperated list of all users in active directory. 
+
+	objRootDSE := ComObjGet("LDAP://rootDSE")
+	strDomain := objRootDSE.Get("defaultNamingContext")
+	strADPath := "LDAP://" . strDomain
+	objDomain := ComObjGet(strADPath)
+	objConnection := ComObjCreate("ADODB.Connection")
+	objConnection.Open("Provider=ADsDSOObject")
+	objCommand := ComObjCreate("ADODB.Command")
+	objCommand.ActiveConnection := objConnection
+	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=user));Name;subtree"
+	objRecordSet := objCommand.Execute
+	objRecordCount := objRecordSet.RecordCount
+	objOutputVar :=
+	While !objRecordSet.EOF
+	{
+		strObjectDN := objRecordSet.Fields.Item("Name").value
+		_UserName = %_UserName%`n%strObjectDN%
+		objRecordSet.MoveNext
+	}
+	objRelease(objRootDSE)
+	objRelease(objDomain)
+	objRelease(objConnection)
+	objRelease(objCommand)
+
+	return _UserName 
+}
+
+GetAllGroups()
+{
+	;Returns a carriage return seperated list of all groups in active directory. 
+
+	objRootDSE := ComObjGet("LDAP://rootDSE")
+	strDomain := objRootDSE.Get("defaultNamingContext")
+	strADPath := "LDAP://" . strDomain
+	objDomain := ComObjGet(strADPath)
+	objConnection := ComObjCreate("ADODB.Connection")
+	objConnection.Open("Provider=ADsDSOObject")
+	objCommand := ComObjCreate("ADODB.Command")
+	objCommand.ActiveConnection := objConnection
+	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=group));Name;subtree"
+	objRecordSet := objCommand.Execute
+	objRecordCount := objRecordSet.RecordCount
+	objOutputVar :=
+	While !objRecordSet.EOF
+	{
+		strObjectDN := objRecordSet.Fields.Item("Name").value
+		_GroupName = %_GroupName%`n%strObjectDN%
+		objRecordSet.MoveNext
+	}
+	objRelease(objRootDSE)
+	objRelease(objDomain)
+	objRelease(objConnection)
+	objRelease(objCommand)
+
+	return _GroupName 
 }
 
 
@@ -485,9 +548,12 @@ USBNoSleep()
 {
 	global AdminUser, AdminPW, AdminDomain
 
-	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-	RegWrite, REG_DWORD, HKEY_LOCAL_MACHINE, SYSTEM\CurrentControlSet\services\USB, DisableSelectiveSuspend, 1
-	RunAs,
+	IfExist, \\cu.int\logonscripts\Registry\USBNoSleep.exe
+	{
+		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+		Run, \\cu.int\logonscripts\Registry\USBNoSleep.exe
+		RunAs,
+	}
 }
 
 SetTime(_NetworkTimeServer)
@@ -617,7 +683,6 @@ IsInstalled(_Software)
 			}
 			
 		} else {
-		
 			DetectHiddenWindows, on
 			DetectHiddenText, on
 			Try
@@ -631,7 +696,6 @@ IsInstalled(_Software)
 						InstalledApps = %InstalledApps%%A_LoopField%`n
 				}
 				WinClose, Search64BitReg.exe
-				;MsgBox, %InstalledApps%
 			}
 			catch
 			{
@@ -644,13 +708,9 @@ IsInstalled(_Software)
 	{
 		If _Software = %A_LoopField%
 		{
-
 			return true
 		}
 	}
-	
-	
-
 	return false
 }
 
