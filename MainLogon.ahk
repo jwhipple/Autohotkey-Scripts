@@ -4,20 +4,23 @@
 ; Free to use/modify as long as this notice remains intact.
 ;
 ;
-; THIS SHOULD ONLY BE USED AS AN EXAMPLE!
-; THIS SCRIPT IS WHAT WE USE, IT WONT WORK FOR YOU UNLESS HEAVILY MODIFIED.
 ;
-;
-;
-
 #SingleInstance force
 SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
 SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 #NoEnv  ; Recommended for performance and compatibility with future AutoHotkey releases.
 #Warn UseUnsetLocal, Off
 
-#Include JRWTools.ahk
-#Include Crypt.ahk
+_SettingsINI = \\CU.INT\logonscripts\MainLogon.ini
+IfNotExist,%_SettingsINI%
+{
+	ExitApp
+}
+;Display progress bar or not
+IniRead, ProgressBarDisplay, %_SettingsINI%, LogonScript, ProgressBarDisplay
+
+#Include \\cu.int\logonscripts\Sources\JRWTools.ahk
+#Include \\cu.int\logonscripts\Sources\Crypt.ahk
 
 RanManually =
 
@@ -27,17 +30,7 @@ RanManually =
 ;# Logon Script Global Settings #
 ;# Configure variables below    #
 ;################################
-
-_SettingsINI = \\Network\path\to\MainLogon.ini
-
- 
-
-
-IfNotExist,%_SettingsINI%
-{
-
-	ExitApp
-}
+ProgressMeter(1,"Loading settings...")
 
 IniRead, DomainName, %_SettingsINI%, Network, DomainName
 IniRead, NameServers, %_SettingsINI%, Network, NameServers
@@ -53,14 +46,8 @@ IniRead, NoDesktopIcons, %_SettingsINI%, Desktop, DontCopyIcons
 IniRead, AdminUser, %_SettingsINI%, Admin, AdminUser
 IniRead, AdminPW, %_SettingsINI%, Admin, AdminPW
 IniRead, AdminDomain, %_SettingsINI%, Admin, AdminDomain
-
-;NOTE!
-;If you want to encrypt the username/password in the ini files, uncomment the next two lines... You have to put the encrypted strings in the INI file.
-;To make an encrypted string, use the following:
-;         MsgBox % Crypt.Encrypt.StrEncrypt(AdminUser,"ENTER A CRYPT HASH HERE",5,1)
-;
-;AdminUser := Crypt.Encrypt.StrDecrypt(AdminUser,"ENTER A CRYPT HASH HERE",5,1)
-;AdminPW := Crypt.Encrypt.StrDecrypt(AdminPW,"ENTER A CRYPT HASH HERE",5,1)
+AdminUser := Crypt.Encrypt.StrDecrypt(AdminUser,"BooYah",5,1)
+AdminPW := Crypt.Encrypt.StrDecrypt(AdminPW,"BooYah",5,1)
 
 OS_Version := GetWindowsVersion()
 OFFICEVER := GetOutlookVersion()
@@ -74,25 +61,53 @@ OFFICEVER := GetOutlookVersion()
 ;#################################
 
 
-;Since this exact script should only be a reference, we kill it before it does anything.
-ExitApp
 
 
 
 
+
+ProgressMeter(2, "Getting version numbers.")
+; Read the version that should have been passed to the script. If no version, use 0.
+if ( %0% > 1 )
+{
+	LogonVersion = %1%
+} else {
+	LogonVersion = 0
+	;LogonVersion = 6.2 ; ***CHANGEME***
+}
+
+; Main Logonscript
+
+;Events for every server/workstation:
+
+; ###################### RAN EVERY TIME ###############################
+ProgressMeter(5, "Setting your computers time.")
 SetTime(TimeServer) ;Set system time.
 
+ProgressMeter(10,"Tracking login to computer.")
+LoginTrack() ; Track wether they logged in or not.
+
+;Events only for Workstations:
 If HasWorkstation()
 {
 ; ###################### RAN EVERY TIME ON WORKSTATIONS ###############################
 	;ALL OS Versions
 	
+	Run, \\cu.int\logonscripts\Installers\DelProf\DeleteOldProfiles.exe,,
+	
+	ProgressMeter(10,"Checking for Antivirus.")
+	CheckAV() ;Check and install antivirus.
+	
+	ProgressMeter(20,"Mapping network drives.")
 	MapDrives() ;Map standard drives.
+	
+	ProgressMeter(25,"Initializing Symitar.")
 	Clear_Symitar_Dropdowns()
 	SymitarRegistry()
 	
 	If ( OS_Version == "Windows XP" )
 	{
+		ProgressMeter(30,"Setting up registry settings.")
 		RegWrite, REG_DWORD, HKEY_CURRENT_USER, Software\Microsoft\Windows\CurrentVersion\Applets\Tour\RunCount, 0
 		MapPrinters() ;Register printers
 		;DefragmentTask()
@@ -100,39 +115,83 @@ If HasWorkstation()
 	}
 	else If ( OS_Version == "Windows 7" )
 	{
-		; Windows 7 specific tasks here
+		ProgressMeter(35,"Setting up registry settings.")
 	}
 	
-	If OFFICEVER > 0
+	If OFFICEVER != 0
 	{
-		
+		; Remove old Scalix profiles as this will trigger the multi-profile selection box when starting Outlook.
+		RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\Scalix
+		Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
+		{
+			FoundPos := RegExMatch(A_LoopRegName, "Default(.*)")
+			If FoundPos
+			{
+				RegDelete
+			}
+		}
+	
 		if (UserInOU("OU=Westerville"))
 		{
 			; Westerville has a local store for their PSTs.
+			ProgressMeter(40,"Setting Outlook for WES user.")
+
 			SetupOutlook(_SettingsINI,0,"WESTERVILLE Outlook")
 		} else {
+			ProgressMeter(40,"Configuring Outlook.")
 			SetupOutlook(_SettingsINI)
 		}
 		
 		If OFFICEVER < 12
 		{
+			ProgressMeter(50,"Installing Office 2007 converters.")
 			O2k7_File_Format_Converters()
 		}
 		
-		If IsUserInADGroup("Group That Gets ServiceFolderAccess")
+		If IsUserInADGroup("G CU.INT ServiceFolderAccess")
 		{	
-			; The people in the above group get an additional outlook profile named Service Folder.
+			ProgressMeter(60,"Setting up Service email account access for you.")
 			SetupOutlook(_SettingsINI,0,"SERVICE Outlook")
 		} else {
 			RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\Service Folder
+			If OutlookProfileCount() > 1
+			{
+				RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
+			}
 		}
+	}
+
+
+;	If IsUserInADGroup("G CU.INT CSI Screen Recording")
+	If A_ComputerName contains callcenter,collection,risk,msr,lending
+	{
+		ProgressMeter(70,"Checking for CSI software.")
+		CSI_ScreenRecordingInstall()
+	}
+	If A_ComputerName contains jwhipple,gocconf200,gocconf201,gocconf204,GOCHRConf,gocboardroom
+	{
+		ProgressMeter(75,"Setting up power save settings.")
+		ConfPowerSave()
 	}
 }
 
+
+
+RegRead, UserLogonVersion, HKEY_CURRENT_USER, SOFTWARE\KEMBA, LogonVersion
+; The following runs if the users logon version does not match.
+
+If (LogonVersion != UserLogonVersion) or (LogonVersion = 0)
+{
+
+
+; ###################### RAN ON NEW LOGONSCRIPT VERSION ###############################
 	
 	SetDNSServers(NameServers, DomainName, DNSSearchOrder) 
 	DisableNetBios()
-		
+	
+	;Disabled because it doesnt like Outlook being set up.
+	;ProgressMeter(75,"Inventorying PC...")
+	;InventoryPC() ; Inventory PC
 	
 	If HasWorkstation()
 	{
@@ -143,21 +202,33 @@ If HasWorkstation()
 			FixTIFFAssoc()
 		}
 		
+		RemoveTimeclockLnk() ; Delete timeclock icon on desktop.
 		
+		ProgressMeter(80,"Setting up COWWW viewer.")
 		Alternatiff() ;Register and setup Alternatiff
 	
+		ProgressMeter(85,"Setting up Explorer Favorites.")
 		CheckForFavorites()
 
+		ProgressMeter(90,"Configuring Symitar.")
 		SymitarInstall()		
 	
+		ProgressMeter(90,"Removing DOC printers.")
 		RemoveDocPrinters() ; Remove Office installed Doc printers
+		
+		ProgressMeter(90,"Disabling USB sleep.")
 		USBNoSleep() ; Dont powersave USB
+		
 		;PowerSave() ; Setup powersave settings
+		
+		ProgressMeter(90,"Disable WTime.")
 		DisableWtime()
+		
 		;MakeShortcuts() ;Make user shortcuts
+		
 		If UsersDepartment("Member Services,Accounting Department,Contact Center,Branch Operations,Operations,Operations Administration,Lending,Branch Administration,Tellers")
 		{
-
+			ProgressMeter(99,"Installing TrueChecks.")
 			TrueChecksInstall() ; Install check verification software.
 		}
 	}
@@ -176,23 +247,39 @@ ExitApp
 ; Functions Below
 ; #################################################################################################################################################################
 
-; Most of these functions below are KEMBA specific... however I left them here so you can see how some things are done (like installing an MSI file etc...)
 
+RemoveTimeclockLnk()
+{
+	;MsgBox, Removing Timeclock
+	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+	RunWait, \\cu.int\logonscripts\Installers\Timeclock\DeleteTimeclockLnk.exe,,
+	RunAs,		
+}
 
 CSI_ScreenRecordingInstall()
 {
-	global AdminUser, AdminPW, AdminDomain
-
+	global AdminUser, AdminPW, AdminDomain, OS_Version
 
 	If Not IsInstalled("Virtual Observer Agent Client")
 	{
+		; turn progress bar off cause we have to ask a question.
+		Progress, Off
 		MsgBox, 292,CSI Virtual Observer Client, Do you wish to install the call recorder `nsoftware on this PC? `n(Select NO if this is not your normal PC),10
 		IfMsgBox Yes
 		{
-
-			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\Agent_Client.msi /qn,,
-			RunAs,
+			If ( OS_Version == "Windows XP" )
+			{
+				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+				RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\XP\Agent_Client.msi /qn,,
+				RunAs,
+			}
+			If ( OS_Version == "Windows 7" )
+			{
+				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+				RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\Win7\Agent_Client.msi /qn,,
+				RunAs,
+			}
+			
 		}
 		else IfMsgBox Timeout
 		{	
@@ -373,18 +460,19 @@ CheckAV()
 	global AdminUser, AdminPW, AdminDomain
 
 	; Install ESET NOD32 if not found.
-	If Not IsInstalled("ESET NOD32 Antivirus")
+	If IsInstalled("eset nod32 antivirus")
 	{
+		return
+	} else {
 
-		SplashImage, \\Network\Path\To\Pictures\logo.jpg, CWFFFFFF  h400 w500 b1 fs18, `n`nNow installing your anti-virus.`nAfter the install your PC will reboot automatically.
-		ExitApp
+		SplashImage, \\cu.int\logonscripts\Pictures\logo.jpg, CWFFFFFF  h400 w500 b1 fs18, `n`nNow installing your anti-virus.`nAfter the install your PC will reboot automatically.
 		
 		If OSBitVersion() = "x86"
 		{
 
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, \\Network\Path\To\Installers\ESET\NOD32Settings.exe,,
-			RunWait, msiexec.exe /passive /forcerestart /i \\Network\Path\To\Installers\ESET\eavbe_nt32_enu.msi,,
+			RunWait, \\cu.int\logonscripts\Installers\ESET\NOD32Settings.exe,,
+			RunWait, msiexec.exe /passive /forcerestart /i \\cu.int\logonscripts\Installers\ESET\eavbe_nt32_enu.msi,,
 			RunAs,
 		}
 		else
@@ -392,14 +480,12 @@ CheckAV()
 
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
 			RunWait, \\cu.int\logonscripts\Installers\ESET\NOD32Settings.exe,,
-			RunWait, msiexec.exe /passive /forcerestart /i \\Network\Path\To\Installers\ESET\eavbe_nt64_enu.msi,,
+			RunWait, msiexec.exe /passive /forcerestart /i \\cu.int\logonscripts\Installers\ESET\eavbe_nt64_enu.msi,,
 			RunAs,
 		}
 		SplashImage, Off
 		Sleep, 10000
 		Shutdown, 6
-
-	} else {
 
 	}
 
@@ -414,8 +500,8 @@ O2k7_File_Format_Converters()
 		If (Not IsInstalled("Compatibility Pack for the 2007 Office system"))
 		{
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, \\Network\Path\To\Installers\OfficePatch\FileFormatConverters.exe /q,,
-			RunWait, \\Network\Path\To\Installers\OfficePatch\o2k7sp1pak.exe /q,,
+			RunWait, \\cu.int\logonscripts\Installers\OfficePatch\FileFormatConverters.exe /q,,
+			RunWait, \\cu.int\logonscripts\Installers\OfficePatch\o2k7sp1pak.exe /q,,
 			RunAs,
 		}
 	}
@@ -432,7 +518,7 @@ SymitarInstall()
 	{
 
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		RunWait, %comspec% /c start msiexec /passive /i \\Network\Path\To\symformapi\SymFormAPI.msi,,
+		RunWait, %comspec% /c start msiexec /passive /i \\cu.int\GPOFiles$\Installs\symformapi\SymFormAPI.msi,,
 		RunAs,
 	}
 	
@@ -488,7 +574,7 @@ SymitarRegistry()
 	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Microsoft\Internet Explorer\PageSetup,margin_top, 0.50000
 
 	;Start Page settings
-	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Browser Options,Startup Page,\\Network\Path\To\Public\Symitar\html\startup.htm
+	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Browser Options,Startup Page,\\cu.int\Public\Symitar\html\startup.htm
 	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Browser Options,Information Page,http://inhouse.kemba.org/
 
 	;Printer fix
@@ -496,19 +582,171 @@ SymitarRegistry()
 	
 	; Symitar and Symform Fixes
 	RegWrite, REG_DWORD, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Account Manager, BlockEMailFunction, 0
+
+	IfExist, \\cu.int\logonscripts\Registry\SymitarReg.exe
+	{
+		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+		Run, \\cu.int\logonscripts\Registry\SymitarReg.exe
+		RunAs,
+	}
+	
 }
 
+
+
+PowerSave()
+{
+	global AdminUser, AdminPW, AdminDomain
+
+	if A_OSVersion in WIN_XP
+	{
+		RunWait, \\cu.int\logonscripts\Installers\Registry\powersave.bat,,HIDE
+		; Run privileged
+		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+		Run, %A_WinDir%\system32\powercfg.exe /SETACTIVE "KEMBA",,HIDE
+		RunAs,
+	} else {
+
+		return
+	}
+}
+
+ConfPowerSave()
+{
+
+	if A_OSVersion in WIN_XP
+	{
+		Run, \\cu.int\logonscripts\Installers\Registry\confpowersave.bat,,HIDE
+		; Run privileged
+		;RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+		;RunWait, %A_WinDir%\system32\powercfg.exe /SETACTIVE Presentation,,HIDE
+		;RunAs,
+	} else {
+
+		return
+	}
+}
+
+RegistrySetup()
+{
+	global AdminUser, AdminPW, AdminDomain
+
+	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+	RunWait, \\cu.int\logonscripts\Registry\RegRunAs.exe,,Hide
+	RunAs,
+}
 
 MapPrinters()
 {
 	if A_OSVersion in WIN_XP
 	{
-		Run, \\Network\Path\To\pushprinterconnections.exe,,Hide
+
+		Run, \\CU.INT\LogonScripts\Printers\pushprinterconnections.exe,,Hide
 	}
 }
 
+MapDrives()
+{
+
+		IfNotExist, I:\
+			Run, %A_WinDir%\system32\net.exe use i: \\cu.int\KembaApps,,Hide
+			;RunWait, %A_WinDir%\system32\net.exe use i: /delete /Y,,Hide
+			
+		IfNotExist, V:\
+			Run, %A_WinDir%\system32\net.exe use v: \\cu.int\department,,Hide
+			;RunWait, %A_WinDir%\system32\net.exe use v: /delete /Y,,Hide
+}
 
 
+Alternatiff()
+{
+	global AdminUser, AdminPW, AdminDomain
+
+	IfNotExist, %A_WinDir%\system\alttiff.ocx
+	{
+
+		if not A_IsAdmin
+		{
+
+			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+			RunWait, %A_WinDir%\system32\xcopy.exe \\cu.int\logonscripts\tqcrunas\alttiff.ocx %A_WinDir%\system\ /y /c,,Hide
+			Run, %A_WinDir%\system32\cmd.exe /C start "Please do not close this window" /belownormal /min regsvr32 /s %A_WinDir%\system\alttiff.ocx,,Hide
+			RunAs,
+		} else {
+
+			RunWait, %A_WinDir%\system32\xcopy.exe \\cu.int\logonscripts\tqcrunas\alttiff.ocx %A_WinDir%\system\ /y /c,,Hide
+			Run, %A_WinDir%\system32\cmd.exe /C start "Please do not close this window" /belownormal /min regsvr32 /s %A_WinDir%\system\alttiff.ocx,,Hide
+		}
+	}
+	else
+	{
+
+		if not A_IsAdmin
+		{
+
+			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+			Run, %A_WinDir%\system32\cmd.exe /C start "Please do not close this window" /belownormal /min regsvr32 /s %A_WinDir%\system\alttiff.ocx,,Hide
+			RunAs,
+		} else {
+			Run, %A_WinDir%\system32\cmd.exe /C start "Please do not close this window" /belownormal /min regsvr32 /s %A_WinDir%\system\alttiff.ocx,,Hide
+		}
+	}
+}
+
+InventoryPC()
+{
+	; This uses the Asset Tracker for Networks package availible at http://www.alchemy-lab.com/products/atn/ for client inventory.
+	IfNotExist, \\cu.int\kembaapps\Inventory\Data\%A_ComputerName%.XML
+	{
+		FileDelete, \\cu.int\kembaapps\Inventory\Data\%A_ComputerName%.XML
+		Run, \\cu.int\kembaapps\Inventory\clientcon.exe echo-
+	}
+}
+
+LoginTrack()
+{
+	; A simple way to track who logged into what computer when.
+	FileAppend,
+	(
+		%A_Now% - %A_ComputerName%`n
+	), \\cu.int\kembaapps\Inventory\Logins\%A_UserName%.txt
+}
+
+
+MakeShortcuts()
+{
+	global AdminUser, AdminPW, AdminDomain, NoDesktopIcons
+
+	IfNotInString, NoDesktopIcons, %A_UserName%
+	{
+		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+		Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\Shortcuts\*.url" "c:\Documents and Settings\All Users\desktop\",,Hide
+		RunAs,
+	}
+}
+
+DefragmentTask()
+{
+	global AdminUser, AdminPW, AdminDomain
+	if A_OSVersion in WIN_XP
+	{
+		IfNotExist, %A_WinDir%\Installers\Tasks\DefragDriveC.job
+		{
+			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+			Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\tasks\*.job" "%A_WinDir%\Tasks\",,Hide
+			RunAs,
+		}
+		IfNotExist, %A_WinDir%\System32\jt.exe
+		{
+			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+			Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\tasks\jt.exe" "%A_WinDir%\System32\",,Hide
+			RunAs,
+			Sleep, 1000
+		}
+		IfExist, %A_WinDir%\System32\jt.exe
+			Run, %A_WinDir%\system32\cmd.exe /C "%A_WinDir%\System32\jt.exe /LJ %A_WinDir%\Tasks\DefragDriveC.job /SC %AdminUser% %AdminPW%",,Hide
+	}
+}
 
 DisableWtime()
 {

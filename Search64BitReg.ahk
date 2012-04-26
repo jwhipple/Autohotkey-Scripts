@@ -5,10 +5,6 @@ SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 #SingleInstance
 
 
-; ######################################################################################
-; THIS SCRIPT MUST BE COMPILED BY THE 64 BIT VERSION OF AUTOHOTKEY TO WORK AS INTENDED!
-; ######################################################################################
-
 
 FindInstalled()
 {
