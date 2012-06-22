@@ -11,7 +11,7 @@ SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 #NoEnv  ; Recommended for performance and compatibility with future AutoHotkey releases.
 #Warn UseUnsetLocal, Off
 
-_SettingsINI = \\CU.INT\logonscripts\MainLogon.ini
+_SettingsINI = \\PATH\TO\MainLogon.ini
 IfNotExist,%_SettingsINI%
 {
 	ExitApp
@@ -19,8 +19,8 @@ IfNotExist,%_SettingsINI%
 ;Display progress bar or not
 IniRead, ProgressBarDisplay, %_SettingsINI%, LogonScript, ProgressBarDisplay
 
-#Include \\cu.int\logonscripts\Sources\JRWTools.ahk
-#Include \\cu.int\logonscripts\Sources\Crypt.ahk
+#Include \\PATH\TO\JRWTools.ahk
+#Include \\PATH\TO\Crypt.ahk
 
 RanManually =
 
@@ -39,6 +39,7 @@ IniRead, TimeServer, %_SettingsINI%, Network, TimeServer
 
 IniRead, SymitarVersion, %_SettingsINI%, Symitar, SymitarVersion
 IniRead, SymitarInstaller, %_SettingsINI%, Symitar, SymitarInstaller
+IniRead, SymFormAPI, %_SettingsINI%, Symitar, SymFormAPI
 Symitar := "Episys Windows Interface " . SymitarVersion
 
 IniRead, NoDesktopIcons, %_SettingsINI%, Desktop, DontCopyIcons
@@ -46,8 +47,8 @@ IniRead, NoDesktopIcons, %_SettingsINI%, Desktop, DontCopyIcons
 IniRead, AdminUser, %_SettingsINI%, Admin, AdminUser
 IniRead, AdminPW, %_SettingsINI%, Admin, AdminPW
 IniRead, AdminDomain, %_SettingsINI%, Admin, AdminDomain
-AdminUser := Crypt.Encrypt.StrDecrypt(AdminUser,"BooYah",5,1)
-AdminPW := Crypt.Encrypt.StrDecrypt(AdminPW,"BooYah",5,1)
+AdminUser := Crypt.Encrypt.StrDecrypt(AdminUser,"PUTHASHHERE",5,1)
+AdminPW := Crypt.Encrypt.StrDecrypt(AdminPW,"PUTHASHHERE",5,1)
 
 OS_Version := GetWindowsVersion()
 OFFICEVER := GetOutlookVersion()
@@ -62,6 +63,8 @@ OFFICEVER := GetOutlookVersion()
 
 
 
+ExitApp
+; You really should not use this script for anything but a guide.
 
 
 
@@ -81,10 +84,11 @@ if ( %0% > 1 )
 ;Events for every server/workstation:
 
 ; ###################### RAN EVERY TIME ###############################
+ExitApp
 ProgressMeter(5, "Setting your computers time.")
 SetTime(TimeServer) ;Set system time.
 
-ProgressMeter(10,"Tracking login to computer.")
+ProgressMeter(10,"Updating login to computer.")
 LoginTrack() ; Track wether they logged in or not.
 
 ;Events only for Workstations:
@@ -92,11 +96,6 @@ If HasWorkstation()
 {
 ; ###################### RAN EVERY TIME ON WORKSTATIONS ###############################
 	;ALL OS Versions
-	
-	Run, \\cu.int\logonscripts\Installers\DelProf\DeleteOldProfiles.exe,,
-	
-	ProgressMeter(10,"Checking for Antivirus.")
-	CheckAV() ;Check and install antivirus.
 	
 	ProgressMeter(20,"Mapping network drives.")
 	MapDrives() ;Map standard drives.
@@ -120,16 +119,7 @@ If HasWorkstation()
 	
 	If OFFICEVER != 0
 	{
-		; Remove old Scalix profiles as this will trigger the multi-profile selection box when starting Outlook.
-		RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\Scalix
-		Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
-		{
-			FoundPos := RegExMatch(A_LoopRegName, "Default(.*)")
-			If FoundPos
-			{
-				RegDelete
-			}
-		}
+
 	
 		if (UserInOU("OU=Westerville"))
 		{
@@ -142,37 +132,33 @@ If HasWorkstation()
 			SetupOutlook(_SettingsINI)
 		}
 		
-		If OFFICEVER < 12
-		{
-			ProgressMeter(50,"Installing Office 2007 converters.")
-			O2k7_File_Format_Converters()
-		}
+
 		
-		If IsUserInADGroup("G CU.INT ServiceFolderAccess")
+		If IsUserInADGroup("ServiceFolderAccess")
 		{	
 			ProgressMeter(60,"Setting up Service email account access for you.")
 			SetupOutlook(_SettingsINI,0,"SERVICE Outlook")
 		} else {
 			RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\Service Folder
-			If OutlookProfileCount() > 1
-			{
-				RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
-			}
+		}
+		
+		If IsUserInADGroup("Member Courtesy Mail Access")
+		{	
+			ProgressMeter(60,"Setting up Member Courtesy email account access for you.")
+			SetupOutlook(_SettingsINI,0,"MEMBERCOURTESY Outlook")
+		} else {
+			RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\Member Courtesy
+		}
+
+		; If they have more than one profile, prompt for which one.
+		If OutlookProfileCount() > 1
+		{
+			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 1
+		} else {
+			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
 		}
 	}
 
-
-;	If IsUserInADGroup("G CU.INT CSI Screen Recording")
-	If A_ComputerName contains callcenter,collection,risk,msr,lending
-	{
-		ProgressMeter(70,"Checking for CSI software.")
-		CSI_ScreenRecordingInstall()
-	}
-	If A_ComputerName contains jwhipple,gocconf200,gocconf201,gocconf204,GOCHRConf,gocboardroom
-	{
-		ProgressMeter(75,"Setting up power save settings.")
-		ConfPowerSave()
-	}
 }
 
 
@@ -187,15 +173,40 @@ If (LogonVersion != UserLogonVersion) or (LogonVersion = 0)
 ; ###################### RAN ON NEW LOGONSCRIPT VERSION ###############################
 	
 	SetDNSServers(NameServers, DomainName, DNSSearchOrder) 
-	DisableNetBios()
-	
+
+
 	;Disabled because it doesnt like Outlook being set up.
 	;ProgressMeter(75,"Inventorying PC...")
 	;InventoryPC() ; Inventory PC
 	
 	If HasWorkstation()
 	{
+		DisableNetBios()
+		
+		Run, \PATH\TO\Installers\DelProf\DeleteOldProfiles.exe,,
+		
+		;Remove old Scalix profiles as this will trigger the multi-profile selection box when starting Outlook.
+		RemoveScalixProfile()
 
+		;Remove unwanted apps.
+		Uninstall_UnwantedApps()
+		
+		;	If IsUserInADGroup("CSI Screen Recording")
+		If A_ComputerName contains callcenter,collection,risk,msr,lending
+		{
+			ProgressMeter(70,"Checking for CSI software.")
+			CSI_ScreenRecordingInstall()
+		}
+
+		If OFFICEVER < 12
+		{
+			ProgressMeter(75,"Installing Office 2007 converters.")
+			O2k7_File_Format_Converters()
+		}
+		
+		ProgressMeter(78,"Checking for Antivirus.")
+		CheckAV() ;Check and install antivirus.
+	
 		If ( OS_Version == "Windows XP" )
 		{
 			RegOLE() ; Fix OLE32 Registration
@@ -226,10 +237,15 @@ If (LogonVersion != UserLogonVersion) or (LogonVersion = 0)
 		
 		;MakeShortcuts() ;Make user shortcuts
 		
+		If IsUserInADGroup("Spark User")
+		{
+			ProgressMeter(92,"Installing SPARK IM Client.")
+			InstallSpark() ; Install Spark message client.
+		}
+		
 		If UsersDepartment("Member Services,Accounting Department,Contact Center,Branch Operations,Operations,Operations Administration,Lending,Branch Administration,Tellers")
 		{
 			ProgressMeter(99,"Installing TrueChecks.")
-			TrueChecksInstall() ; Install check verification software.
 		}
 	}
 }
@@ -246,13 +262,76 @@ ExitApp
 
 ; Functions Below
 ; #################################################################################################################################################################
+Uninstall_UnwantedApps()
+{
+	global AdminUser, AdminPW, AdminDomain
+	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+	
+	;Office Validation App
+	RunWait, %A_WinDir%\system32\cmd.exe /C "MsiExec.exe /q /x{90140000-2005-0000-0000-0000000FF1CE}",,
+	
+	;Truechecks
+	RunWait, %A_WinDir%\system32\cmd.exe /C "MsiExec.exe /q /x{FBED5358-817D-4522-9B15-1990D4F02283}",,
+	RunWait, %A_WinDir%\system32\cmd.exe /C "MsiExec.exe /q /x{FF774F85-7B0B-4F63-9FC0-093BF67BC478}",,
+	
+	;Scalix
+	RunWait, %A_WinDir%\system32\cmd.exe /C "MsiExec.exe /q /x{05A7EAED-88E4-485F-A361-8324261BF4D3}",,
+		
+	RunAs,
+}
 
+InstallSpark()
+{
+	global AdminUser, AdminPW, AdminDomain
+	return
+	
+	If not IsInstalled("Java\(TM\).*")
+	{
+		;Install Java
+		If OSBitVersion() = "x86"
+		{
+			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+			RunWait, %A_WinDir%\system32\cmd.exe /C "\PATH\TO\Installers\Java\jre-6u27-windows-i586-s.exe /s IEXPLORER=1",,
+			RunAs,
+		} else {
+			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+			RunWait, \PATH\TO\Installers\Java\jre-6u27-windows-x64 /s IEXPLORE=1,,
+			RunWait, \PATH\TO\Installers\Java\jre-6u27-windows-i586-s.exe /s IEXPLORER=1,,
+			RunAs,
+		}
+	}
+
+	If not IsInstalled("Spark")
+	{
+		;Install Spark
+		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+		RunWait, msiexec /i \PATH\TO\Installers\Spark\Spark.msi /qn,,
+		RunAs,
+		FileCopy, \PATH\TO\Installers\Spark\config\*.*, %A_AppData%\Spark\, 1
+	}
+}
+
+
+RemoveScalixProfile()
+{
+	;Remove old Scalix profiles as this will trigger the multi-profile selection box when starting Outlook.
+	RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\Scalix
+	Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
+	{
+		FoundPos := RegExMatch(A_LoopRegName, "Default(.*)")
+		If FoundPos
+		{
+			RegDelete
+		}
+	}
+}
 
 RemoveTimeclockLnk()
 {
+	global AdminUser, AdminPW, AdminDomain
 	;MsgBox, Removing Timeclock
 	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-	RunWait, \\cu.int\logonscripts\Installers\Timeclock\DeleteTimeclockLnk.exe,,
+	RunWait, \PATH\TO\Installers\Timeclock\DeleteTimeclockLnk.exe,,
 	RunAs,		
 }
 
@@ -270,13 +349,13 @@ CSI_ScreenRecordingInstall()
 			If ( OS_Version == "Windows XP" )
 			{
 				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-				RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\XP\Agent_Client.msi /qn,,
+				RunWait, msiexec /i \PATH\TO\Installers\CSI\XP\Agent_Client.msi /qn,,
 				RunAs,
 			}
 			If ( OS_Version == "Windows 7" )
 			{
 				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-				RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\Win7\Agent_Client.msi /qn,,
+				RunWait, msiexec /i \PATH\TO\Installers\CSI\Win7\Agent_Client.msi /qn,,
 				RunAs,
 			}
 			
@@ -298,7 +377,7 @@ CSI_ScreenRecordingInstall()
 	{
 
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		RunWait, msiexec /i \\cu.int\logonscripts\Installers\CSI\Elearning_Client.msi /qn,,
+		RunWait, msiexec /i \PATH\TO\Installers\CSI\Elearning_Client.msi /qn,,
 		RunAs,
 	}
 }
@@ -312,35 +391,6 @@ RegOLE()
 	RunAs,			
 } 
 
-TrueChecksInstall()
-{
-	global AdminUser, AdminPW, AdminDomain
-
-
-		
-	If Not IsInstalled("TrueChecks Notifier")
-	{
-		;RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		;Run, %comspec% /c DEL /Y `"%A_DesktopCommon%\TrueChecks*.lnk`",,
-		;RunAs,
-
-		;RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		RunWait, msiexec /passive /uninstall \\cu.int\logonscripts\Installers\TrueChecks\TrueChecksNotifierSetup.msi,,
-		RunWait, msiexec /passive /i \\cu.int\logonscripts\Installers\TrueChecks\TrueChecksNotifierSetup.msi,,
-		RunWait, \\cu.int\logonscripts\Installers\TrueChecks\TrueChecksSetup.exe -s -o,,
-		;RunAs,
-
-
-		;Move the links to the desktop.
-		; AdminDesktop = %A_DesktopCommon%
-		; StringReplace, AdminDesktop, AdminDesktop, All Users, %AdminUser%, ALL
-		; RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		; Run, %comspec% /c MOVE /Y `"%AdminDesktop%\TrueChecks*.lnk`" `"%A_DesktopCommon%`",,
-		; RunAs, 
-	}
-
-}
-
 
 ETokenCheck()
 {
@@ -350,7 +400,7 @@ ETokenCheck()
 	{
 
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		RunWait, msiexec /qb /promptrestart /lvx* %A_Temp%/pki-install.log /i \\cu.int\logonscripts\Installers\CorpOneToken\Windows_x32_v5.00.msi PROP_REG_FILE=\\cu.int\logonscripts\Installers\CorpOneToken\settings.reg,,
+		RunWait, msiexec /qb /promptrestart /lvx* %A_Temp%/pki-install.log /i \PATH\TO\Installers\CorpOneToken\Windows_x32_v5.00.msi PROP_REG_FILE=\PATH\TO\Installers\CorpOneToken\settings.reg,,
 		RunAs,			
 	} else {
 
@@ -465,22 +515,22 @@ CheckAV()
 		return
 	} else {
 
-		SplashImage, \\cu.int\logonscripts\Pictures\logo.jpg, CWFFFFFF  h400 w500 b1 fs18, `n`nNow installing your anti-virus.`nAfter the install your PC will reboot automatically.
+		SplashImage, \PATH\TO\Pictures\logo.jpg, CWFFFFFF  h400 w500 b1 fs18, `n`nNow installing your anti-virus.`nAfter the install your PC will reboot automatically.
 		
 		If OSBitVersion() = "x86"
 		{
 
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, \\cu.int\logonscripts\Installers\ESET\NOD32Settings.exe,,
-			RunWait, msiexec.exe /passive /forcerestart /i \\cu.int\logonscripts\Installers\ESET\eavbe_nt32_enu.msi,,
+			RunWait, \PATH\TO\Installers\ESET\NOD32Settings.exe,,
+			RunWait, msiexec.exe /passive /forcerestart /i \PATH\TO\Installers\ESET\eavbe_nt32_enu.msi,,
 			RunAs,
 		}
 		else
 		{
 
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, \\cu.int\logonscripts\Installers\ESET\NOD32Settings.exe,,
-			RunWait, msiexec.exe /passive /forcerestart /i \\cu.int\logonscripts\Installers\ESET\eavbe_nt64_enu.msi,,
+			RunWait, \PATH\TO\Installers\ESET\NOD32Settings.exe,,
+			RunWait, msiexec.exe /passive /forcerestart /i \PATH\TO\Installers\ESET\eavbe_nt64_enu.msi,,
 			RunAs,
 		}
 		SplashImage, Off
@@ -500,8 +550,8 @@ O2k7_File_Format_Converters()
 		If (Not IsInstalled("Compatibility Pack for the 2007 Office system"))
 		{
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, \\cu.int\logonscripts\Installers\OfficePatch\FileFormatConverters.exe /q,,
-			RunWait, \\cu.int\logonscripts\Installers\OfficePatch\o2k7sp1pak.exe /q,,
+			RunWait, \PATH\TO\Installers\OfficePatch\FileFormatConverters.exe /q,,
+			RunWait, \PATH\TO\Installers\OfficePatch\o2k7sp1pak.exe /q,,
 			RunAs,
 		}
 	}
@@ -511,27 +561,21 @@ O2k7_File_Format_Converters()
 
 SymitarInstall()
 {
-	global OS_Version, Symitar, SymitarInstaller, AdminUser, AdminPW, AdminDomain
+	global OS_Version, Symitar, SymitarInstaller, SymFormAPI, AdminUser, AdminPW, AdminDomain
 
 	
 	If Not IsInstalled("SymForm API")
 	{
-
-		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		RunWait, %comspec% /c start msiexec /passive /i \\cu.int\GPOFiles$\Installs\symformapi\SymFormAPI.msi,,
-		RunAs,
+		InstallMSI(SymFormAPI)
 	}
 	
 	If Not IsInstalled(Symitar)
 	{
-
-
 		UninstallSoftware("Episys Windows Interface`%")
 		FileDelete, C:\Documents and Settings\%A_UserName%\Application Data\Microsoft\Internet Explorer\Quick Launch\Symitar.lnk
 
 		If ( OS_Version == "Windows XP" )
 		{
-
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
 			RunWait, TASKKILL /F /IM RemoteAdminServer.exe,,Hide
 			RunWait, %comspec% /c DEL "C:\Documents and Settings\All Users\Desktop\Symitar.lnk",,
@@ -542,7 +586,6 @@ SymitarInstall()
 		}
 		else If ( OS_Version == "Windows 7" )
 		{
-
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
 			RunWait, TASKKILL /F /IM RemoteAdminServer.exe,,Hide
 			RunWait, %comspec% /c DEL "C:\Users\Public\Desktop\Symitar.lnk",,
@@ -550,7 +593,8 @@ SymitarInstall()
 			RunAs,
 		}
 
-		InstallSoftware(SymitarInstaller . " /quiet")
+		InstallMSI(SymitarInstaller)
+		
 		RunWait, %comspec% /c copy "C:\Documents and Settings\All Users\Desktop\Epi*.lnk" "C:\Documents and Settings\%A_Username%\Application Data\Microsoft\Internet Explorer\Quick Launch\"
 
 	} else {
@@ -574,7 +618,7 @@ SymitarRegistry()
 	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Microsoft\Internet Explorer\PageSetup,margin_top, 0.50000
 
 	;Start Page settings
-	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Browser Options,Startup Page,\\cu.int\Public\Symitar\html\startup.htm
+	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Browser Options,Startup Page,\PATH\TO\Symitar\html\startup.htm
 	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Browser Options,Information Page,http://inhouse.kemba.org/
 
 	;Printer fix
@@ -583,10 +627,10 @@ SymitarRegistry()
 	; Symitar and Symform Fixes
 	RegWrite, REG_DWORD, HKEY_CURRENT_USER, Software\Symitar\SFW\2.0\Account Manager, BlockEMailFunction, 0
 
-	IfExist, \\cu.int\logonscripts\Registry\SymitarReg.exe
+	IfExist, \PATH\TO\Registry\SymitarReg.exe
 	{
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		Run, \\cu.int\logonscripts\Registry\SymitarReg.exe
+		Run, \PATH\TO\Registry\SymitarReg.exe
 		RunAs,
 	}
 	
@@ -600,7 +644,7 @@ PowerSave()
 
 	if A_OSVersion in WIN_XP
 	{
-		RunWait, \\cu.int\logonscripts\Installers\Registry\powersave.bat,,HIDE
+		RunWait, \PATH\TO\Installers\Registry\powersave.bat,,HIDE
 		; Run privileged
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
 		Run, %A_WinDir%\system32\powercfg.exe /SETACTIVE "KEMBA",,HIDE
@@ -611,28 +655,13 @@ PowerSave()
 	}
 }
 
-ConfPowerSave()
-{
-
-	if A_OSVersion in WIN_XP
-	{
-		Run, \\cu.int\logonscripts\Installers\Registry\confpowersave.bat,,HIDE
-		; Run privileged
-		;RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		;RunWait, %A_WinDir%\system32\powercfg.exe /SETACTIVE Presentation,,HIDE
-		;RunAs,
-	} else {
-
-		return
-	}
-}
 
 RegistrySetup()
 {
 	global AdminUser, AdminPW, AdminDomain
 
 	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-	RunWait, \\cu.int\logonscripts\Registry\RegRunAs.exe,,Hide
+	RunWait, \PATH\TO\Registry\RegRunAs.exe,,Hide
 	RunAs,
 }
 
@@ -641,7 +670,7 @@ MapPrinters()
 	if A_OSVersion in WIN_XP
 	{
 
-		Run, \\CU.INT\LogonScripts\Printers\pushprinterconnections.exe,,Hide
+		Run, \PATH\TO\Printers\pushprinterconnections.exe,,Hide
 	}
 }
 
@@ -649,11 +678,11 @@ MapDrives()
 {
 
 		IfNotExist, I:\
-			Run, %A_WinDir%\system32\net.exe use i: \\cu.int\KembaApps,,Hide
+			Run, %A_WinDir%\system32\net.exe use i: \PATH\TO,,Hide
 			;RunWait, %A_WinDir%\system32\net.exe use i: /delete /Y,,Hide
 			
 		IfNotExist, V:\
-			Run, %A_WinDir%\system32\net.exe use v: \\cu.int\department,,Hide
+			Run, %A_WinDir%\system32\net.exe use v: \PATH\TO,,Hide
 			;RunWait, %A_WinDir%\system32\net.exe use v: /delete /Y,,Hide
 }
 
@@ -669,12 +698,12 @@ Alternatiff()
 		{
 
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, %A_WinDir%\system32\xcopy.exe \\cu.int\logonscripts\tqcrunas\alttiff.ocx %A_WinDir%\system\ /y /c,,Hide
+			RunWait, %A_WinDir%\system32\xcopy.exe \PATH\TO\tqcrunas\alttiff.ocx %A_WinDir%\system\ /y /c,,Hide
 			Run, %A_WinDir%\system32\cmd.exe /C start "Please do not close this window" /belownormal /min regsvr32 /s %A_WinDir%\system\alttiff.ocx,,Hide
 			RunAs,
 		} else {
 
-			RunWait, %A_WinDir%\system32\xcopy.exe \\cu.int\logonscripts\tqcrunas\alttiff.ocx %A_WinDir%\system\ /y /c,,Hide
+			RunWait, %A_WinDir%\system32\xcopy.exe \PATH\TO\tqcrunas\alttiff.ocx %A_WinDir%\system\ /y /c,,Hide
 			Run, %A_WinDir%\system32\cmd.exe /C start "Please do not close this window" /belownormal /min regsvr32 /s %A_WinDir%\system\alttiff.ocx,,Hide
 		}
 	}
@@ -696,10 +725,10 @@ Alternatiff()
 InventoryPC()
 {
 	; This uses the Asset Tracker for Networks package availible at http://www.alchemy-lab.com/products/atn/ for client inventory.
-	IfNotExist, \\cu.int\kembaapps\Inventory\Data\%A_ComputerName%.XML
+	IfNotExist, \PATH\TO\Inventory\Data\%A_ComputerName%.XML
 	{
-		FileDelete, \\cu.int\kembaapps\Inventory\Data\%A_ComputerName%.XML
-		Run, \\cu.int\kembaapps\Inventory\clientcon.exe echo-
+		FileDelete, \PATH\TO\Inventory\Data\%A_ComputerName%.XML
+		Run, \PATH\TO\Inventory\clientcon.exe echo-
 	}
 }
 
@@ -709,7 +738,7 @@ LoginTrack()
 	FileAppend,
 	(
 		%A_Now% - %A_ComputerName%`n
-	), \\cu.int\kembaapps\Inventory\Logins\%A_UserName%.txt
+	), \PATH\TO\Inventory\Logins\%A_UserName%.txt
 }
 
 
@@ -720,7 +749,7 @@ MakeShortcuts()
 	IfNotInString, NoDesktopIcons, %A_UserName%
 	{
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\Shortcuts\*.url" "c:\Documents and Settings\All Users\desktop\",,Hide
+		Run, %A_WinDir%\system32\xcopy.exe /Y "\PATH\TO\Installers\Shortcuts\*.url" "c:\Documents and Settings\All Users\desktop\",,Hide
 		RunAs,
 	}
 }
@@ -733,13 +762,13 @@ DefragmentTask()
 		IfNotExist, %A_WinDir%\Installers\Tasks\DefragDriveC.job
 		{
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\tasks\*.job" "%A_WinDir%\Tasks\",,Hide
+			Run, %A_WinDir%\system32\xcopy.exe /Y "\PATH\TO\Installers\tasks\*.job" "%A_WinDir%\Tasks\",,Hide
 			RunAs,
 		}
 		IfNotExist, %A_WinDir%\System32\jt.exe
 		{
 			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			Run, %A_WinDir%\system32\xcopy.exe /Y "\\cu.int\logonscripts\Installers\tasks\jt.exe" "%A_WinDir%\System32\",,Hide
+			Run, %A_WinDir%\system32\xcopy.exe /Y "\PATH\TO\Installers\tasks\jt.exe" "%A_WinDir%\System32\",,Hide
 			RunAs,
 			Sleep, 1000
 		}

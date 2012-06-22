@@ -28,19 +28,20 @@ UserObjectADQuery(_object)
 
 	if (_object = "department") && _userDepartment
 		return %_userDepartment%
-	
-	objRootDSE := ComObjGet("LDAP://rootDSE")
-	strDomain := objRootDSE.Get("defaultNamingContext")
-	strADPath := "LDAP://" . strDomain
-	objDomain := ComObjGet(strADPath)
-	objConnection := ComObjCreate("ADODB.Connection")
-	objConnection.Open("Provider=ADsDSOObject")
-	objCommand := ComObjCreate("ADODB.Command")
-	objCommand.ActiveConnection := objConnection
-	;objFileSystem := ComObjCreate("Scripting.FileSystemObject")
-	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=person)(objectClass=user)(sAMAccountName=" . A_UserName . "))" . ";" . _object . ";subtree"
+
 	try
 	{
+		objRootDSE := ComObjGet("LDAP://rootDSE")
+		strDomain := objRootDSE.Get("defaultNamingContext")
+		strADPath := "LDAP://" . strDomain
+		objDomain := ComObjGet(strADPath)
+		objConnection := ComObjCreate("ADODB.Connection")
+		objConnection.Open("Provider=ADsDSOObject")
+		objCommand := ComObjCreate("ADODB.Command")
+		objCommand.ActiveConnection := objConnection
+		;objFileSystem := ComObjCreate("Scripting.FileSystemObject")
+		objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=person)(objectClass=user)(sAMAccountName=" . A_UserName . "))" . ";" . _object . ";subtree"
+
 		objRecordSet := objCommand.Execute
 		objRecordCount := objRecordSet.RecordCount
 	}
@@ -84,13 +85,12 @@ UserObjectADQuery(_object)
 }
 
 
-InstallSoftware(_Software)
+InstallMSI(_Software)
 {
 	global AdminUser, AdminPW, AdminDomain
-
-	MyCommand := "msiexec /i " . _Software . " /quiet"
+	Progress, Off
 	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-	RunWait, %comspec% /c start msiexec /i %_Software%,,
+	RunWait, %comspec% /c start msiexec /i "%_Software%" /passive,,
 	RunAs,
 
 }
@@ -311,10 +311,10 @@ DisableNetBios()
 		}
 		if a_LoopRegName = NetbiosOptions
 		{
-			IfExist, \\cu.int\logonscripts\Registry\NetBiosSetting.exe
+			IfExist, \PATH\TO\Registry\NetBiosSetting.exe
 			{
 				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-				Run, \\cu.int\logonscripts\Registry\NetBiosSetting.exe  %A_LoopRegSubKey%
+				Run, \PATH\TO\Registry\NetBiosSetting.exe  %A_LoopRegSubKey%
 				RunAs,
 			}
 		}
@@ -373,25 +373,33 @@ UserIsMemberOf(_User)
 	} else {
 		UserName := %_User%
 	}
-	
-	objRootDSE := ComObjGet("LDAP://rootDSE")
-	strDomain := objRootDSE.Get("defaultNamingContext")
-	strADPath := "LDAP://" . strDomain
-	objDomain := ComObjGet(strADPath)
-	objConnection := ComObjCreate("ADODB.Connection")
-	objConnection.Open("Provider=ADsDSOObject")
-	objCommand := ComObjCreate("ADODB.Command")
-	objCommand.ActiveConnection := objConnection
-	objCommand.CommandText := "<" . strADPath . ">" . ";(&(&(&(objectCategory=group)(member=" . UserName . "))));Name;subtree"
-	objRecordSet := objCommand.Execute
-	objRecordCount := objRecordSet.RecordCount
-	objOutputVar :=
-	While !objRecordSet.EOF
-	{
-		strObjectDN := objRecordSet.Fields.Item("Name").value
-		_UsersGroups = %_UsersGroups%`n%strObjectDN%
-		objRecordSet.MoveNext
+	try {
+		objRootDSE := ComObjGet("LDAP://rootDSE")
+		strDomain := objRootDSE.Get("defaultNamingContext")
+		strADPath := "LDAP://" . strDomain
+		objDomain := ComObjGet(strADPath)
+		objConnection := ComObjCreate("ADODB.Connection")
+		objConnection.Open("Provider=ADsDSOObject")
+		objCommand := ComObjCreate("ADODB.Command")
+		objCommand.ActiveConnection := objConnection
+		objCommand.CommandText := "<" . strADPath . ">" . ";(&(&(&(objectCategory=group)(member=" . UserName . "))));Name;subtree"
+		objRecordSet := objCommand.Execute
+		objRecordCount := objRecordSet.RecordCount
+		objOutputVar :=
+		While !objRecordSet.EOF
+		{
+			strObjectDN := objRecordSet.Fields.Item("Name").value
+			_UsersGroups = %_UsersGroups%`n%strObjectDN%
+			objRecordSet.MoveNext
+		}
 	}
+	catch {
+		objRelease(objRootDSE)
+		objRelease(objDomain)
+		objRelease(objConnection)
+		objRelease(objCommand)
+	}
+	
 	objRelease(objRootDSE)
 	objRelease(objDomain)
 	objRelease(objConnection)
@@ -406,25 +414,34 @@ UserIsMemberOf(_User)
 GetAllUsers()
 {
 	;Returns a carriage return seperated list of all users in active directory. 
-
-	objRootDSE := ComObjGet("LDAP://rootDSE")
-	strDomain := objRootDSE.Get("defaultNamingContext")
-	strADPath := "LDAP://" . strDomain
-	objDomain := ComObjGet(strADPath)
-	objConnection := ComObjCreate("ADODB.Connection")
-	objConnection.Open("Provider=ADsDSOObject")
-	objCommand := ComObjCreate("ADODB.Command")
-	objCommand.ActiveConnection := objConnection
-	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=user));Name;subtree"
-	objRecordSet := objCommand.Execute
-	objRecordCount := objRecordSet.RecordCount
-	objOutputVar :=
-	While !objRecordSet.EOF
-	{
-		strObjectDN := objRecordSet.Fields.Item("Name").value
-		_UserName = %_UserName%`n%strObjectDN%
-		objRecordSet.MoveNext
+	try {
+		objRootDSE := ComObjGet("LDAP://rootDSE")
+		strDomain := objRootDSE.Get("defaultNamingContext")
+		strADPath := "LDAP://" . strDomain
+		objDomain := ComObjGet(strADPath)
+		objConnection := ComObjCreate("ADODB.Connection")
+		objConnection.Open("Provider=ADsDSOObject")
+		objCommand := ComObjCreate("ADODB.Command")
+		objCommand.ActiveConnection := objConnection
+		objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=user));Name;subtree"
+		objRecordSet := objCommand.Execute
+		objRecordCount := objRecordSet.RecordCount
+		objOutputVar :=
+		While !objRecordSet.EOF
+		{
+			strObjectDN := objRecordSet.Fields.Item("Name").value
+			_UserName = %_UserName%`n%strObjectDN%
+			objRecordSet.MoveNext
+		}
 	}
+	catch {
+		objRelease(objRootDSE)
+		objRelease(objDomain)
+		objRelease(objConnection)
+		objRelease(objCommand)
+	
+	}
+	
 	objRelease(objRootDSE)
 	objRelease(objDomain)
 	objRelease(objConnection)
@@ -436,25 +453,30 @@ GetAllUsers()
 GetAllGroups()
 {
 	;Returns a carriage return seperated list of all groups in active directory. 
-
-	objRootDSE := ComObjGet("LDAP://rootDSE")
-	strDomain := objRootDSE.Get("defaultNamingContext")
-	strADPath := "LDAP://" . strDomain
-	objDomain := ComObjGet(strADPath)
-	objConnection := ComObjCreate("ADODB.Connection")
-	objConnection.Open("Provider=ADsDSOObject")
-	objCommand := ComObjCreate("ADODB.Command")
-	objCommand.ActiveConnection := objConnection
-	objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=group));Name;subtree"
-	objRecordSet := objCommand.Execute
-	objRecordCount := objRecordSet.RecordCount
-	objOutputVar :=
-	While !objRecordSet.EOF
-	{
-		strObjectDN := objRecordSet.Fields.Item("Name").value
-		_GroupName = %_GroupName%`n%strObjectDN%
-		objRecordSet.MoveNext
+	try {
+		objRootDSE := ComObjGet("LDAP://rootDSE")
+		strDomain := objRootDSE.Get("defaultNamingContext")
+		strADPath := "LDAP://" . strDomain
+		objDomain := ComObjGet(strADPath)
+		objConnection := ComObjCreate("ADODB.Connection")
+		objConnection.Open("Provider=ADsDSOObject")
+		objCommand := ComObjCreate("ADODB.Command")
+		objCommand.ActiveConnection := objConnection
+		objCommand.CommandText := "<" . strADPath . ">" . ";(&(objectCategory=group));Name;subtree"
+		objRecordSet := objCommand.Execute
+		objRecordCount := objRecordSet.RecordCount
+		objOutputVar :=
+		While !objRecordSet.EOF
+		{
+			strObjectDN := objRecordSet.Fields.Item("Name").value
+			_GroupName = %_GroupName%`n%strObjectDN%
+			objRecordSet.MoveNext
+		}
 	}
+	catch {
+		; Ooops.
+	}
+	
 	objRelease(objRootDSE)
 	objRelease(objDomain)
 	objRelease(objConnection)
@@ -548,10 +570,10 @@ USBNoSleep()
 {
 	global AdminUser, AdminPW, AdminDomain
 
-	IfExist, \\cu.int\logonscripts\Registry\USBNoSleep.exe
+	IfExist, \PATH\TO\Registry\USBNoSleep.exe
 	{
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		Run, \\cu.int\logonscripts\Registry\USBNoSleep.exe
+		Run, \PATH\TO\Registry\USBNoSleep.exe
 		RunAs,
 	}
 }
@@ -622,25 +644,30 @@ FindDistinguishedName(_Item)
 		;Pass to a more efficient function.
 		_Item := UserObjectADQuery("distinguishedName")
 	} else {
-		;MsgBox, FindDistinguishedName(_Item)
-		MembersOfGroup := Object()
-		objRootDSE := ComObjGet("LDAP://rootDSE")
-		strDomain := objRootDSE.Get("defaultNamingContext")
-		strADPath := "LDAP://" . strDomain
-		objDomain := ComObjGet(strADPath)
-		objConnection := ComObjCreate("ADODB.Connection")
-		objConnection.Open("Provider=ADsDSOObject")
-		objCommand := ComObjCreate("ADODB.Command")
-		objCommand.ActiveConnection := objConnection
+		try {
+			;MsgBox, FindDistinguishedName(_Item)
+			MembersOfGroup := Object()
+			objRootDSE := ComObjGet("LDAP://rootDSE")
+			strDomain := objRootDSE.Get("defaultNamingContext")
+			strADPath := "LDAP://" . strDomain
+			objDomain := ComObjGet(strADPath)
+			objConnection := ComObjCreate("ADODB.Connection")
+			objConnection.Open("Provider=ADsDSOObject")
+			objCommand := ComObjCreate("ADODB.Command")
+			objCommand.ActiveConnection := objConnection
 
-		objCommand.CommandText := "<" . strADPath . ">;(|(name=" . _Item . ")(sAMAccountName=" . _Item . "));distinguishedName;subtree"
-		objRecordSet := objCommand.Execute
-		objRecordCount := objRecordSet.RecordCount
-		objOutputVar :=
-		While !objRecordSet.EOF
-		{
-		  _Item := objRecordSet.Fields.Item("distinguishedName").value
-		  objRecordSet.MoveNext
+			objCommand.CommandText := "<" . strADPath . ">;(|(name=" . _Item . ")(sAMAccountName=" . _Item . "));distinguishedName;subtree"
+			objRecordSet := objCommand.Execute
+			objRecordCount := objRecordSet.RecordCount
+			objOutputVar :=
+			While !objRecordSet.EOF
+			{
+			  _Item := objRecordSet.Fields.Item("distinguishedName").value
+			  objRecordSet.MoveNext
+			}
+		}
+		catch {
+			; Ooops
 		}
 		objRelease(objRootDSE)
 		objRelease(objDomain)
@@ -706,9 +733,21 @@ IsInstalled(_Software)
 	
 	Loop, Parse, InstalledApps, `n
 	{
-		If _Software = %A_LoopField%
+		FoundPos := RegExMatch(_Software,"\*")
+		If FoundPos
 		{
-			return true
+			FoundPos := RegExMatch(A_LoopField,_Software)
+			If FoundPos
+			{
+				return true
+			}
+		}
+		else 
+		{
+			if _Software = %A_LoopField%
+			{
+				return true
+			}
 		}
 	}
 	return false
@@ -1278,7 +1317,7 @@ RunBackgroundOutlook()
 	try
 	{
 		;Tell Outlook to configure itself using COM objects.
-		;SplashImage, \\cu.int\logonscripts\Pictures\logo.jpg, CWFFFFFF  h600 w800 b1 fs18,`n`n`nNow configuring your e-mail client.`n`nPLEASE WAIT`n`nDo not use your keyboard or mouse yet.
+		;SplashImage, \PATH\TO\Pictures\logo.jpg, CWFFFFFF  h600 w800 b1 fs18,`n`n`nNow configuring your e-mail client.`n`nPLEASE WAIT`n`nDo not use your keyboard or mouse yet.
 
 		;The FlipOutlookLoginBit function is for people that set the "Always prompt for login credentials" setting. It bypasses this so we can run Outlook in the background without prompts.
 		
