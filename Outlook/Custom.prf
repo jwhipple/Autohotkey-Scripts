@@ -43,6 +43,7 @@ SaveSentMail=True
 ChangePointerOnNewMail=False
 NotifyWithDialogOnNewMail=False
 PlaySoundWhenNewMail=False
+OverwriteExisitingService=Yes
 
 [Service2]
 ConversionProhibited=True
@@ -102,6 +103,7 @@ OfflineAddressBookPath=PT_STRING8,0x660E
 ExchangeConfigFlags=PT_LONG,0x6601
 ConversionProhibited=PT_BOOLEAN,0x3A03
 OSTEncryptionType=PT_LONG,0x6702
+
 [Microsoft Mail]
 ServiceName=MSFS
 ServerPath=PT_STRING8,0x6600

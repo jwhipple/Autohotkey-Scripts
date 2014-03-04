@@ -17,7 +17,22 @@ _distinguishedName = ;Contains the distinguished name of current user.
 _userDepartment = ;Contains the department a user is in.
 InstalledApps = ;Contains a list of all installed applications on the computer.
 
+searchRegexString(_searchString,_searchIn)
+{
 
+	Loop, parse, _searchIn," " ,
+	{
+		FoundPos := RegExMatch(_searchString, A_LoopField)
+		If ( FoundPos > 0 )
+		{
+			return true
+		}
+		
+	}
+
+
+	return false
+}
 
 UserObjectADQuery(_object)
 {
@@ -95,26 +110,6 @@ InstallMSI(_Software)
 
 }
 
-UninstallSoftware(_Software)
-{
-	global AdminUser, AdminPW, AdminDomain
-	
-
-	objWMIService := ComObjGet("winmgmts:{impersonationLevel=impersonate}!\\" . A_ComputerName . "\root\cimv2")
-	WQLQuery = Select IdentifyingNumber, Name  FROM Win32_Product WHERE Name LIKE "%_Software%"
-	colFolder := objWMIService.ExecQuery(WQLQuery)._NewEnum    	
-	While colFolder[objFolder] {
-		Text := objFolder.Name
-			MyCommand := "msiexec /passive /uninstall " . objFolder.IdentifyingNumber . " /quiet"
-
-			RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-			RunWait, %MyCommand%
-			RunAs,
-
-	}
-}
-
-
 Check_Network_Alive(_PingHost)
 {
 	RunWait, %comspec% /c ping -n 1 -w 1000 %_PingHost% | find "Received = 1",,hide
@@ -130,27 +125,22 @@ GetWindowsVersion()
 	RegRead, ProductName, HKEY_LOCAL_MACHINE, Software\Microsoft\Windows NT\CurrentVersion, ProductName
 	IfInString, ProductName, Vista
 	{
-
 		return "Windows Vista"
 	}
 	IfInString, ProductName, Windows 7
 	{
-
 		return "Windows 7"
 	}
 	IfInString, ProductName, XP
 	{
-
 		return "Windows XP"
 	}
 	IfInString, ProductName, 2003
 	{
-
 		return "Windows 2003"
 	}
 	IfInString, ProductName, 2000
 	{
-
 		return "Windows 2000"
 	}
 	return %ProductName%
@@ -267,7 +257,6 @@ Asc(Inp,UC = 0)
 SetDNSServers(_NameServers, _DomainName, _DNSSearchOrder)
 {
 
-	
 	;Set the search order for DNS suffixes.
 	RegWrite, REG_SZ, HKEY_LOCAL_MACHINE, SYSTEM\CurrentControlSet\Services\Tcpip\Parameters, SearchList, %_DNSSearchOrder% 
 	;This will change the DNS servers for the TCP interface with a gateway present.
@@ -299,26 +288,9 @@ DisableNetBios()
 	global AdminUser, AdminPW, AdminDomain
 
 	;Disables NetBios on ALL network adapters.
-	Loop, HKEY_LOCAL_MACHINE, SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces, 1, 1
-	{
-		if a_LoopRegType = key
-			value =
-		else
-		{
-			RegRead, value
-			if ErrorLevel
-				value = *error*
-		}
-		if a_LoopRegName = NetbiosOptions
-		{
-			IfExist, \PATH\TO\Registry\NetBiosSetting.exe
-			{
-				RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-				Run, \PATH\TO\Registry\NetBiosSetting.exe  %A_LoopRegSubKey%
-				RunAs,
-			}
-		}
-	}
+	RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
+	Run, wmic nicconfig where (TcpipNetbiosOptions != Null and TcpipNetbiosOptions != 2 ) call SetTcpipNetbios 2
+	RunAs,
 }
 
 OSBitVersion()
@@ -330,6 +302,13 @@ OSBitVersion()
 		RegRead, OSBitNumber, HKEY_LOCAL_MACHINE, SYSTEM\CurrentControlSet\Control\Session Manager\Environment, Processor_Architecture
 	}
 	return OSBitNumber
+}
+
+GetOfficeBitsize()
+{
+	OFFICEVER := GetOutlookVersion()
+	RegRead, OFFICEBITS, HKEY_LOCAL_MACHINE, Software\Microsoft\Office\%OFFICEVER%\Outlook, Bitness
+	return %OFFICEBITS%
 }
 
 UsersDepartment(_Dept)
@@ -406,9 +385,59 @@ UserIsMemberOf(_User)
 	objRelease(objCommand)
 	if _UsersGroups
 	{
-		_UsersGroups = %_UsersGroups%`nDomain Users
+		_UsersGroups = %_UsersGroups%`nDomain Users ; Add Domain Users because every user belongs to this group.
 	}
+	
 	return _UsersGroups 
+}
+
+GroupsInGroup(_Group)
+{
+	;Returns a carriage return seperated list of the group(s) the user belongs to. 
+	_UsersGroups =
+	
+	StringLeft, GroupNameStart, _Group, 3
+	StringUpper, GroupNameStart, GroupNameStart
+	If GroupNameStart != "CN=" ; We were given a simple name for the group so we find the distinguished name.
+	{
+		DistinguishedName := FindDistinguishedName(_Group)
+		
+	} else {
+		DistinguishedName := %_Group%
+	}
+	try {
+		objRootDSE := ComObjGet("LDAP://rootDSE")
+		strDomain := objRootDSE.Get("defaultNamingContext")
+		strADPath := "LDAP://" . strDomain
+		objDomain := ComObjGet(strADPath)
+		objConnection := ComObjCreate("ADODB.Connection")
+		objConnection.Open("Provider=ADsDSOObject")
+		objCommand := ComObjCreate("ADODB.Command")
+		objCommand.ActiveConnection := objConnection
+		objCommand.CommandText := "<" . strADPath . ">" . ";(&(&(&(objectCategory=group)(memberOf=" . DistinguishedName . "))));Name;subtree"
+		objRecordSet := objCommand.Execute
+		objRecordCount := objRecordSet.RecordCount
+		objOutputVar :=
+		While !objRecordSet.EOF
+		{
+			strObjectDN := objRecordSet.Fields.Item("Name").value
+			_GroupList = %_GroupList%`n%strObjectDN%
+			objRecordSet.MoveNext
+		}
+	}
+	catch {
+		objRelease(objRootDSE)
+		objRelease(objDomain)
+		objRelease(objConnection)
+		objRelease(objCommand)
+	}
+	
+	objRelease(objRootDSE)
+	objRelease(objDomain)
+	objRelease(objConnection)
+	objRelease(objCommand)
+
+	return _GroupList 
 }
 
 GetAllUsers()
@@ -486,15 +515,19 @@ GetAllGroups()
 }
 
 
-IsUserInADGroup(_GroupName)
+IsUserInADGroup(_GroupName, _User = "", recurse = 1)
 {
 	;Determines if a user is in _GroupName
 	global _CurUsersGroups
 
+	If not _User
+	{
+		_User = %A_UserName%
+	}
 	
 	If not _CurUsersGroups
 	{
-		_CurUsersGroups := UserIsMemberOf(A_Username)
+		_CurUsersGroups := UserIsMemberOf(_User)
 	}
 	
 	Loop, parse, _CurUsersGroups, `n
@@ -504,10 +537,65 @@ IsUserInADGroup(_GroupName)
 			return true
 		}
 	}
+	
+	if recurse
+	{
+		_grouplist := GroupsInGroup(_GroupName)
+		if _grouplist
+		{
+			GroupArray := Object()
+			Loop, parse, _grouplist, `n
+			{
+				StringLen, namelength, A_LoopField
+				If namelength
+				{
+					GroupArray.Insert(A_Loopfield)
+				}
+			}
 
+			for index, name in GroupArray
+			{
+				if IsUserInADGroup(name, _User, 0)
+				{
+					;User has been found in group
+					_CurUsersGroups := _CurUsersGroups . "`n" . name
+					return 1
+				}
+				
+				_subgrouplist := GroupsInGroup(name)
+				if _subgrouplist
+				{
+					Loop, parse, _subgrouplist, `n
+					{
+						StringLen, namelength, A_LoopField
+						If namelength
+						{
+							if not SearchArray(A_Loopfield,GroupArray)
+							{
+								GroupArray.Insert(A_Loopfield)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
 	return false
 }
 
+
+SearchArray(_needle,_haystack)
+{
+	for index, name in _haystack
+	{
+		ifEqual, _needle, %name%
+		{
+			return 1
+		}
+	}
+	return 0
+}
 
 
 UserInOU(_OUName)
@@ -570,13 +658,14 @@ USBNoSleep()
 {
 	global AdminUser, AdminPW, AdminDomain
 
-	IfExist, \PATH\TO\Registry\USBNoSleep.exe
+	IfExist, \\network\path\to\USBNoSleep.exe
 	{
 		RunAs, %AdminUser%, %AdminPW%, %AdminDomain%
-		Run, \PATH\TO\Registry\USBNoSleep.exe
+		Run, \\network\path\to\USBNoSleep.exe
 		RunAs,
 	}
 }
+
 
 SetTime(_NetworkTimeServer)
 {
@@ -586,6 +675,7 @@ SetTime(_NetworkTimeServer)
 	Run, %A_WinDir%\system32\net.exe time \\%_NetworkTimeServer% /SET /Y,,Hide
 	RunAs,
 }
+
 
 StdoutToVar_CreateProcess(sCmd, bStream = "", sDir = "", sInput = "")
 {
@@ -628,14 +718,13 @@ StdoutToVar_CreateProcess(sCmd, bStream = "", sDir = "", sInput = "")
 
 CreateFilePath(_FilePath)
 {
-
 	IfNotExist, %_FilePath%
 	{
-
 		FileCreateDir, %_FilePath%
 	}
 }
 
+; Find the DN in active directory for an item. Used when finding a users full DN.
 FindDistinguishedName(_Item)
 {
 	;This finds a full DN name from a short name or a samaccount name.
@@ -677,7 +766,7 @@ FindDistinguishedName(_Item)
 	return _Item
 }
 
-
+; Find out if some software is installed. Not totally reliable.
 IsInstalled(_Software)
 {
 	;Check registry for installed program.
@@ -772,6 +861,7 @@ ProgressMeter(_Percent=0, _Message="Message Not Set", _2Message="We recommend wa
 ; ####################### MS OFFICE FUNCTIONS ####################### 
 
 
+;This will set a network location for templates in Office so everyone can have access to the same thing like electronic letterhead and fax cover sheets. (Word mainly).
 SetOfficeTemplatesLocation(_OfficeTemplates)
 {
 	global OFFICEVER
@@ -780,6 +870,7 @@ SetOfficeTemplatesLocation(_OfficeTemplates)
 	RegWrite, REG_SZ, HKEY_CURRENT_USER, Software\Microsoft\Office\%OFFICEVER%\Common\General, SharedTemplates, %_OfficeTemplates%
 }
 
+;Checks to see if they have Office installed.
 HasOffice(_OfficeVersion=-1)
 {
 	; We create a Word object, then check for the version... Thanks to the site: http://blogs.technet.com/b/heyscriptingguy/archive/2005/01/10/how-can-i-determine-which-version-of-word-is-installed-on-a-computer.aspx
@@ -810,33 +901,11 @@ HasOffice(_OfficeVersion=-1)
 ; ####################### OUTLOOK FUNCTIONS ####################### 
 
 
-CleanUpServiceFolderAccess()
-{
-	;Old Installs Cleanup.
-	Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 1, 0
-	{
-		If A_LoopRegType = KEY
-		{
-			IfEqual, A_LoopRegName, Service Folder
-			{
-				;Keep this folder
-			} else IfEqual, A_LoopRegName, Exchange2007
-			{
-				;Also keep this folder
-			} else {
-				RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%A_LoopRegName%
-			}
-		}
-	}
-}
-
-
-
 ; ###### Completed Functions Below ######
 
+;Outlook crap folder (opening attachments gets temp stored here) that needs cleaned now and then.
 CleanOutlookTemp()
 {	
-
 	Loop, HKEY_CURRENT_USER, Software\Microsoft\Office, 1, 1
 	{
 		if a_LoopRegName = OutlookSecureTempFolder
@@ -855,6 +924,7 @@ CleanOutlookTemp()
 	}
 }
 
+;What version of outlook do they have?
 GetOutlookVersion()
 {
 
@@ -963,14 +1033,42 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 	; Usage:  SetupOutlook(<ini settings file>, <ignore existing profile? 0|1>, <Section in ini file to look for outlook settings>)
 	; Requires: GetOutlookVersion() OutlookProfileExist() RunBackgroundOutlook() OutlookProfileCount() ParseSignatureFiles() SetOutlookSignatureNames()
 	global OFFICEVER
-	
+	global _UsersINI
+	global LogonVersion
+
+	; Check for Outlook.
+	If Not OFFICEVER
+	{
+		OFFICEVER := GetOutlookVersion()
+		If Not OFFICEVER
+		{
+			return
+		}
+	}
+
+	If wipe ; We are told to delete all Outlook profiles
+	{
+		; Wipe all current profiles.
+		RemoveOfficeProfile("*")
+	}
+
 	; Check to make sure settings file exists.
 	IfNotExist,%_SettingsINI%
 	{
+		progress, Off
+		SplashImage, Off
 		MsgBox,Can't Find %_SettingsINI%!`nPlease let MIS know.`n
 		return
 	}
-
+	
+	;Read the INI file to see if they even get Outlook set up..
+	IniRead, NoOutlook, %_SettingsINI%, %_MailSectionName%, NoOutlook
+	IfInString, NoOutlook, %A_UserName%
+	{
+		return
+	}
+	
+	;Get critical settings from the INI file.
 	IniRead, MailServer, %_SettingsINI%, %_MailSectionName%, MailServer
 	IniRead, DoAutoArchive, %_SettingsINI%, %_MailSectionName%, DoAutoArchive
 	IniRead, AutoArchiveFile, %_SettingsINI%, %_MailSectionName%, AutoArchiveFile
@@ -980,54 +1078,40 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 	IniRead, DefaultProfile, %_SettingsINI%, %_MailSectionName%, DefaultProfile
 	IniRead, OverwriteProfile, %_SettingsINI%, %_MailSectionName%, OverwriteProfile
 	IniRead, MailboxName, %_SettingsINI%, %_MailSectionName%, MailboxName
+
+	; Replace tokens in ini file settings with actual values.
 	SplitPath, UsersPRF,, UserPRFdir
 	StringReplace, UserPRFdir, UserPRFdir, `%USERNAME`%, %A_UserName%, ALL
-	
-	IfNotExist, %UserPRFdir%
-	{
-		FileCreateDir, %UserPRFdir%
-	}
-	IfNotExist, %UserPRFdir%
-	{
-		progress, Off
-		SplashImage, Off
-		MsgBox, Cant create PRF directory!
-		return
-	}
-	
-	UsersPRF := UsersPRF . MailProfile . ".prf"
-		
 	StringReplace, AutoArchiveFile, AutoArchiveFile, `%USERNAME`%, %A_UserName%, ALL
 	StringReplace, prfTemplate, prfTemplate, `%USERNAME`%, %A_UserName%, ALL
 	StringReplace, UsersPRF, UsersPRF, `%USERNAME`%, %A_UserName%, ALL
 	StringReplace, MailProfile, MailProfile, `%USERNAME`%, %A_UserName%, ALL 
 	StringReplace, MailboxName, MailboxName, `%USERNAME`%, %A_UserName%, ALL
-
-	If wipe
+	UsersPRF := UsersPRF . MailProfile . ".prf"
+	
+	; We store a PRF for Outlook on a network drive so we can save time configuring a users Outlook. Check for this file.
+	IfNotExist, %UserPRFdir%
 	{
-		Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
+		try 
 		{
-			RegDelete
+			FileCreateDir, %UserPRFdir%
 		}
-		Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Deleted Profiles, 2, 0
+		catch 
 		{
-			RegDelete
+			progress, Off
+			SplashImage, Off
+			MsgBox, Cant create Outlook PRF directory!`nPlease tell MIS.
+			return
 		}
 	}
-	
+
 	If OutlookProfileExist(MailProfile)
 	{
-		IfExist, %UsersPRF%
+		IfNotExist, %UsersPRF%
 		{
-			; We have Outlook configured and also a PRF file... life is good.
-			
-		} else {
-		
 			; NO PRF, but we got an Outlook configured.
 			; Create a PRF file for user.
-
 			FileRead,CustomPRFFile,%prfTemplate%
-
 			StringReplace, CustomPRFFile, CustomPRFFile, _PROFILENAME_, %MailProfile%, ALL
 			StringReplace, CustomPRFFile, CustomPRFFile, _AUTOARCHIVEFILE_, %AutoArchiveFile%, ALL
 			StringReplace, CustomPRFFile, CustomPRFFile, _MAILBOXNAME_, %MailboxName%, ALL
@@ -1035,11 +1119,9 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 			StringReplace, CustomPRFFile, CustomPRFFile, _DOAUTOARCHIVE_, %DoAutoArchive%, ALL
 			StringReplace, CustomPRFFile, CustomPRFFile, _DEFAULTPROFILE_, %DefaultProfile%, ALL
 			StringReplace, CustomPRFFile, CustomPRFFile, _OVERWRITEPROFILE_, %OverwriteProfile%, ALL
-			
 			StringSplit, PRFFileArray, CustomPRFFile,~
 
-			
-
+			;Find all the PST's the user has mapped in Outlook and add them to the PRF.
 			PSTCount := 4
 			Loop, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%MailProfile%, 1, 1
 			{
@@ -1051,7 +1133,6 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 					; PST was a network accessible one.
 					IfExist, %jResult%  ;If the PST actually exists on the drive, we add it to the Outlook config.
 					{
-
 						StringUpper, jResult, jResult
 						PRFFileArray1 := PRFFileArray1 . "`nService" . PSTCount . "=Personal Folders"
 						PRFFileArray2 := PRFFileArray2 . "`n[Service" . PSTCount . "]"
@@ -1071,8 +1152,6 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 			CustomPRFFile  := PRFFileArray1 . PRFFileArray2 . PRFFileArray3
 			StringReplace, CustomPRFFile, CustomPRFFile, ~,, All 
 			
-
-			
 			file := FileOpen(UsersPRF, "w")
 			file.write(CustomPRFFile)
 			file.close()				
@@ -1082,17 +1161,10 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 	} else {
 	
 		;No Outlook profile configured, check for PRF.
-		
-		; Check for Outlook.
-		OFFICEVER := GetOutlookVersion()
-		If Not OFFICEVER
-		{
-			return
-		}
-	
-		Run, taskkill /T /F /IM OUTLOOK.EXE,,Hide
-	
+		RunWait, taskkill /T /F /IM OUTLOOK.EXE,,Hide
+		RegDelete, HKEY_CURRENT_USER , SOFTWARE\Microsoft\Office\%OFFICEVER%\Outlook\Profiles\%MailProfile%
 		RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
+		RegDelete, HKEY_CURRENT_USER, SOFTWARE\KEMBA, MailSigVer ; Delete the signature version because we don't have an Outlook profile.
 		
 		IfExist, %UsersPRF%
 		{
@@ -1124,14 +1196,10 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 					break
 				}
 			}			
-			
 
-			
-			
 		} else {
 		
 			; No Outlook Profile and no PRF file, use a generic one.
-			
 			FileRead,CustomPRFFile,%prfTemplate%
 			StringReplace, CustomPRFFile, CustomPRFFile, _PROFILENAME_, %MailProfile%, ALL
 			StringReplace, CustomPRFFile, CustomPRFFile, _AUTOARCHIVEFILE_, %AutoArchiveFile%, ALL
@@ -1148,15 +1216,12 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 			
 			loop, 4
 			{
-
-		
-
 				;RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, DefaultProfile
 				RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Outlook\Setup\,First-Run
 				RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Outlook\Setup\,FirstRun
 				RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Outlook\Setup\,ImportPRF
 				RegDelete, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Outlook\Setup\,CreateWelcome
-				
+			
 				RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 0
 
 				RegRead,CurrentDefaultProfile,HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, DefaultProfile 
@@ -1180,7 +1245,8 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 			}
 			
 		}
-
+		
+		; If they have another profile, set it up so it prompts which one they want to use.
 		If OutlookProfileCount() > 1
 		{
 			RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Exchange\Client\Options, PickLogonProfile, 1
@@ -1212,41 +1278,51 @@ SetupOutlook(_SettingsINI, wipe=0, _MailSectionName="Outlook")
 			RegWrite, REG_BINARY, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Common\UserInfo, UserName, %FullName%	
 		}
 	}
+
 	
-	;Setup Signatures Here
+	
+	
+	
+	; Outlook Signatures
+	
 	IniRead, signatures, %_SettingsINI%, %_MailSectionName%, signatures
 	IniRead, NoSignatures, %_SettingsINI%, %_MailSectionName%, NoSignatures
-	IniRead, fullsignaturetemplate, %_SettingsINI%, %_MailSectionName%, fullsignaturetemplate
-	IniRead, replysignaturetemplate, %_SettingsINI%, %_MailSectionName%, replysignaturetemplate
 	
-	If signatures
+	If ( signatures )
 	{
+		
 		IfNotInString, NoSignatures, %A_UserName%
 		{
-
-			;Set up signatures if the flag is set in the INI file and they are not listed as no signatures.
-			ParseSignatureFiles(fullsignaturetemplate)
-			ParseSignatureFiles(replysignaturetemplate)
-			SplitPath, fullsignaturetemplate, fullname
-			SplitPath, replysignaturetemplate, replyname
-			SetOutlookSignatureNames(MailProfile, fullname, replyname)
+			; Add logic to tell if signatures need re-generated.
+			RegRead, _CompSigVer, HKEY_CURRENT_USER, SOFTWARE\KEMBA, MailSigVer
+			IniRead, _UserSigVer, %_UsersINI%, MailSignatures, LastChanged
+			If ( _CompSigVer != _UserSigVer ) or ( LogonVersion = 0 )
+			{
+				; The signature the PC has is out of date.
+				If ( _UserSigVer = "" ) or ( _UserSigVer = "ERROR" ) or ( LogonVersion = 0 )
+				{
+					_UserSigVer = %A_MM%-%A_DD%-%A_YYYY%
+					IniWrite, %A_MM%-%A_DD%-%A_YYYY%, %_UsersINI%, MailSignatures, LastChanged
+				}
+				ProgressMeter(42,"Configuring Outlook Signatures.")
+				RegWrite, REG_SZ, HKEY_CURRENT_USER, SOFTWARE\KEMBA, MailSigVer, %_UserSigVer%
+				OutlookSignatures(_MailSectionName)
+			}
 		}
 	}
 
 	CleanOutlookTemp() ;If this temp file fills up, then they wont be able to open attachments in Outlook.
-	
 	return
 }
+
+
 
 CreateOutlookPRF()
 {
 
 
 	; Create a PRF file for user.
-
-
 	FileRead,CustomPRFFile,%prfTemplate%
-
 	StringReplace, CustomPRFFile, CustomPRFFile, _PROFILENAME_, %MailProfile%, ALL
 	StringReplace, CustomPRFFile, CustomPRFFile, _AUTOARCHIVEFILE_, %AutoArchiveFile%, ALL
 	StringReplace, CustomPRFFile, CustomPRFFile, _MAILBOXNAME_, %MailboxName%, ALL
@@ -1302,13 +1378,76 @@ CreateOutlookPRF()
 }
 OutlookProfileCount()
 {
+	global OFFICEVER
+	
+	If Not OFFICEVER
+	{
+		OFFICEVER := GetOutlookVersion()
+		If Not OFFICEVER
+		{
+			return
+		}
+	}
+		
 	;If we have more than one profile, set the flag that allows us to choose which profile we want.
 	X = 0
-	Loop, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
+	
+	If OFFICEVER >= 15.0
 	{
-		X++
+		; Office stores profile names in different spot from 2013 on.
+		Loop, HKEY_CURRENT_USER, Software\Microsoft\Office\%OFFICEVER%\Outlook\Profiles, 2, 0
+		{
+			X++
+		}
+		return X	
+		
+	} else {
+		Loop, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2, 0
+		{
+			X++
+		}
+		return X
 	}
-	return X
+	
+	return 0
+}
+
+RemoveOfficeProfile( _ProfileName )
+{
+	global OFFICEVER
+	
+	If Not OFFICEVER
+	{
+		OFFICEVER := GetOutlookVersion()
+		If Not OFFICEVER
+		{
+			return
+		}
+	}
+	
+	If _ProfileName = *
+	{
+		If OFFICEVER >= 15.0
+		{
+			Loop, HKEY_CURRENT_USER, Software\Microsoft\Office\%OFFICEVER%\Outlook\Profiles, 2,0
+			{
+				RegDelete, HKEY_CURRENT_USER, Software\Microsoft\Office\%OFFICEVER%\Outlook\Profiles\%A_LoopRegName%
+			}
+		} else {
+			Loop, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 2,0
+			{
+				RegDelete, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%A_LoopRegName%
+			}
+		}		
+		
+	} else {
+		If OFFICEVER >= 15.0
+		{
+			RegDelete, HKEY_CURRENT_USER, Software\Microsoft\Office\%OFFICEVER%\Outlook\Profiles\%_ProfileName%
+		} else {
+			RegDelete, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%_ProfileName%
+		}
+	}
 }
 
 RunBackgroundOutlook()
@@ -1317,10 +1456,9 @@ RunBackgroundOutlook()
 	try
 	{
 		;Tell Outlook to configure itself using COM objects.
-		;SplashImage, \PATH\TO\Pictures\logo.jpg, CWFFFFFF  h600 w800 b1 fs18,`n`n`nNow configuring your e-mail client.`n`nPLEASE WAIT`n`nDo not use your keyboard or mouse yet.
 
 		;The FlipOutlookLoginBit function is for people that set the "Always prompt for login credentials" setting. It bypasses this so we can run Outlook in the background without prompts.
-		
+	
 		objCommand := ComObjCreate("Outlook.Application")
 		objNameSpace := objCommand.GetNameSpace("MAPI")
 		objFolder := objNameSpace.GetDefaultFolder(6)
@@ -1339,19 +1477,39 @@ RunBackgroundOutlook()
 
 OutlookProfileExist(_ProfileName) ; Check to see if the user has the specified profile in Outlook.
 {
-
-	; I changed the following because contact center could have multiple profiles.
+	global OFFICEVER
+	; We have to look because the user could have multiple profiles.
 	Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles, 1, 0
 	{
 		If A_LoopRegType = KEY
 		{
 			If A_LoopRegName = %_ProfileName%
 			{
-
 				return true
 			}
 		}
 	}
+	
+	; Check for Outlook.
+	If Not OFFICEVER
+	{
+		OFFICEVER := GetOutlookVersion()
+		If Not OFFICEVER
+		{
+			return
+		}
+	}
+
+	Loop, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Office\%OFFICEVER%\Outlook\Profiles, 1, 0
+	{
+		If A_LoopRegType = KEY
+		{
+			If A_LoopRegName = %_ProfileName%
+			{
+				return true
+			}
+		}
+	}	
 
 	return false
 }
@@ -1422,6 +1580,23 @@ FlipOutlookLoginBit()
 ; ####################### OUTLOOK SIGNATURE FUNCTIONS ####################### 
 ; ####################### OUTLOOK SIGNATURE FUNCTIONS ####################### 
 
+OutlookSignatures(_MailSectionName)
+{
+	global _SettingsINI
+	; Create Outlook Signatures
+	IniRead, fullsignaturetemplate, %_SettingsINI%, %_MailSectionName%, fullsignaturetemplate
+	IniRead, replysignaturetemplate, %_SettingsINI%, %_MailSectionName%, replysignaturetemplate
+	IniRead, MailProfile, %_SettingsINI%, %_MailSectionName%, ProfileName
+	
+	;Set up signatures if the flag is set in the INI file and they are not listed as no signatures.
+	ParseSignatureFiles(fullsignaturetemplate)
+	ParseSignatureFiles(replysignaturetemplate)
+	SplitPath, fullsignaturetemplate, fullname
+	SplitPath, replysignaturetemplate, replyname
+	SetOutlookSignatureNames(MailProfile, fullname, replyname)
+
+}
+
 
 ParseSignatureFiles(_FileTemplateBaseName)
 {
@@ -1433,6 +1608,7 @@ ParseSignatureFiles(_FileTemplateBaseName)
 		;If the signature directory is not there, create it.
 		FileCreateDir, %SignaturePath%
 	}
+	
 	;Base filename of the file.
 	SplitPath, _FileTemplateBaseName, fullname
 
@@ -1491,10 +1667,28 @@ ParseSignatureFiles(_FileTemplateBaseName)
 
 SetOutlookSignatureNames(_Profile, _Fullsig, _Replysig)
 {
+	global OFFICEVER
+	
+	; Check for Outlook.
+	If Not OFFICEVER
+	{
+		OFFICEVER := GetOutlookVersion()
+		If Not OFFICEVER
+		{
+			return
+		}
+	}
+	
 	; The values for the signature files names are currently hard set for full and reply. Figure out the vaules for fullsig and replysig if you need to change them.
+	If ( OFFICEVER = "15.0" )
+	{
+		OffProfile := "Software\Microsoft\Office\" . OFFICEVER . "\Outlook\Profiles\" . _Profile . "\9375CFF0413111d3B88A00104B2A6676"
+	} else {
+		OffProfile := "Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\" . _Profile . "\9375CFF0413111d3B88A00104B2A6676"
+	}
 
-
-	Loop, HKEY_CURRENT_USER, Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles\%_Profile%\9375CFF0413111d3B88A00104B2A6676, 1, 1
+	
+	Loop, HKEY_CURRENT_USER, %OffProfile%, 1, 1
 	{
 		RegRead, value
 		If Asc(value) = "MicrosoftExchange" || Asc(value) = "MSEMS"

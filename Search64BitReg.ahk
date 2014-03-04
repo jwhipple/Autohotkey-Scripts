@@ -2,10 +2,9 @@
 #Warn  ; Recommended for catching common errors.
 SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
 SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
-#SingleInstance
+#SingleInstance ignore
 
-; THIS FILE HAS TO BE COMPILED IN 64 BIT MODE ON A 64 BIT MACHINE.
-; This is so it can see 64bit apps in the registry.
+
 
 FindInstalled()
 {

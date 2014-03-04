@@ -1,16 +1,15 @@
 
-Cooperatively yours,
+Truely yours,
 
 _givenName_ _sn_
 _title_
-KEMBA Financial Credit Union
+My Company Name
 
 _mail_
 _telephoneNumber_
-800.282.6420 ext. _ipPhone_
+800.555.5555 ext. _ipPhone_
 
 
-Working together, for each other.  That's cooperation.
-That's the KEMBA Advantage.
+My super company tagline here
 
 _info_
