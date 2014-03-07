@@ -24,6 +24,19 @@ IfNotExist,%_SettingsINI% ; If we dont have settings, quit.
 ;Display progress bar or not
 IniRead, ProgressBarDisplay, %_SettingsINI%, LogonScript, ProgressBarDisplay
 
+
+
+
+
+
+
+
+
+;########################################################################################
+;##                                                                                    ##
+;## PLEASE LOOK AT JRWTOOLS.AHK, THIS IS WHERE MOST OF THE WORK IS DONE IN THIS SCRIPT ##
+;##                                                                                    ##
+;########################################################################################
 ; You probably should include the full path for the two files below.
 #Include JRWTools.ahk
 #Include Crypt.ahk
